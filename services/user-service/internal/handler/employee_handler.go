@@ -36,6 +36,30 @@ func (h *EmployeeHandler) Register(c *gin.Context) {
 	c.JSON(http.StatusCreated, dto.ToEmployeeResponse(employee))
 }
 
+// Gets list of employees with filtering and pagination
+func (h *EmployeeHandler) ListEmployees(c *gin.Context) {
+	var query dto.ListEmployeesQuery
+	if err := c.ShouldBindQuery(&query); err != nil {
+		c.Error(errors.BadRequestErr(err.Error()))
+		return
+	}
+
+	if query.Page == 0 {
+		query.Page = 1
+	}
+	if query.PageSize == 0 {
+		query.PageSize = 10
+	}
+
+	result, err := h.service.GetAllEmployees(c.Request.Context(), &query)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
 func (h *EmployeeHandler) Activate(c *gin.Context) {
 	var req dto.ActivateEmployeeRequest
 
@@ -51,4 +75,5 @@ func (h *EmployeeHandler) Activate(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Password set successfully"})
+}
 }
