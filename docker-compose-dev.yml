@@ -28,6 +28,7 @@ services:
       DB_USER: ${DB_USER}
       DB_PASS: ${DB_PASS}
       DB_NAME: ${DB_NAME}
+      AIR_CONFIG_PATH: /app/services/user-service/.air.toml
     depends_on:
       user_service_db:
         condition: service_healthy
@@ -37,6 +38,8 @@ services:
       - .:/app:Z
       - /app/tmp
       - /go/pkg/mod
+    working_dir: /app/services/user-service
+
 
 volumes:
   user_service_db_data:
