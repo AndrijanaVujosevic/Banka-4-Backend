@@ -10,8 +10,6 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// --- Identity Repository Fake ---
-
 type fakeIdentityRepo struct {
 	byID       *model.Identity
 	byEmail    *model.Identity
@@ -60,8 +58,6 @@ func (f *fakeIdentityRepo) UsernameExists(_ context.Context, _ string) (bool, er
 	return f.usernameExists, f.existsErr
 }
 
-// --- Employee Repository Fake ---
-
 type fakeEmployeeRepo struct {
 	byID         *model.Employee
 	byIdentityID *model.Employee
@@ -99,8 +95,6 @@ func (f *fakeEmployeeRepo) GetAll(_ context.Context, _, _, _, _ string, _, _ int
 	return f.allEmps, f.allTotal, f.getAllErr
 }
 
-// --- Client Repository Fake ---
-
 type fakeClientRepo struct {
 	byIdentityID *model.Client
 
@@ -118,8 +112,6 @@ func (f *fakeClientRepo) Create(_ context.Context, client *model.Client) error {
 func (f *fakeClientRepo) FindByIdentityID(_ context.Context, _ uint) (*model.Client, error) {
 	return f.byIdentityID, f.findErr
 }
-
-// --- Token Repository Fakes ---
 
 type fakeActivationTokenRepo struct {
 	token     *model.ActivationToken
@@ -178,8 +170,6 @@ func (f *fakeRefreshTokenRepo) DeleteByIdentityID(_ context.Context, _ uint) err
 	return f.deleteErr
 }
 
-// --- Position Repository Fake ---
-
 type fakePositionRepo struct {
 	exists    bool
 	existsErr error
@@ -200,8 +190,6 @@ func (f *fakeMailer) Send(_, _, _ string) error {
 	f.sent = true
 	return f.sendErr
 }
-
-// --- Helpers ---
 
 func testConfig() *config.Configuration {
 	return &config.Configuration{
