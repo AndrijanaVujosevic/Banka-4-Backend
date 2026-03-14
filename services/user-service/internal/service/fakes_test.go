@@ -10,12 +10,59 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+type fakeIdentityRepo struct {
+	byID       *model.Identity
+	byEmail    *model.Identity
+	byUsername *model.Identity
+
+	emailExists    bool
+	usernameExists bool
+
+	findErr   error
+	createErr error
+	updateErr error
+	existsErr error
+
+	createdIdentity *model.Identity
+	updatedIdentity *model.Identity
+}
+
+func (f *fakeIdentityRepo) Create(_ context.Context, identity *model.Identity) error {
+	f.createdIdentity = identity
+	identity.ID = 1
+	return f.createErr
+}
+
+func (f *fakeIdentityRepo) FindByID(_ context.Context, _ uint) (*model.Identity, error) {
+	return f.byID, f.findErr
+}
+
+func (f *fakeIdentityRepo) FindByEmail(_ context.Context, _ string) (*model.Identity, error) {
+	return f.byEmail, f.findErr
+}
+
+func (f *fakeIdentityRepo) FindByUsername(_ context.Context, _ string) (*model.Identity, error) {
+	return f.byUsername, f.findErr
+}
+
+func (f *fakeIdentityRepo) Update(_ context.Context, identity *model.Identity) error {
+	f.updatedIdentity = identity
+	return f.updateErr
+}
+
+func (f *fakeIdentityRepo) EmailExists(_ context.Context, _ string) (bool, error) {
+	return f.emailExists, f.existsErr
+}
+
+func (f *fakeIdentityRepo) UsernameExists(_ context.Context, _ string) (bool, error) {
+	return f.usernameExists, f.existsErr
+}
+
 type fakeEmployeeRepo struct {
-	byEmail    *model.Employee
-	byUsername *model.Employee
-	byID       *model.Employee
-	allEmps    []model.Employee
-	allTotal   int64
+	byID         *model.Employee
+	byIdentityID *model.Employee
+	allEmps      []model.Employee
+	allTotal     int64
 
 	findErr   error
 	createErr error
@@ -26,16 +73,12 @@ type fakeEmployeeRepo struct {
 	updatedEmployee *model.Employee
 }
 
-func (f *fakeEmployeeRepo) FindByEmail(_ context.Context, _ string) (*model.Employee, error) {
-	return f.byEmail, f.findErr
-}
-
-func (f *fakeEmployeeRepo) FindByUserName(_ context.Context, _ string) (*model.Employee, error) {
-	return f.byUsername, f.findErr
-}
-
 func (f *fakeEmployeeRepo) FindByID(_ context.Context, _ uint) (*model.Employee, error) {
 	return f.byID, f.findErr
+}
+
+func (f *fakeEmployeeRepo) FindByIdentityID(_ context.Context, _ uint) (*model.Employee, error) {
+	return f.byIdentityID, f.findErr
 }
 
 func (f *fakeEmployeeRepo) Create(_ context.Context, emp *model.Employee) error {
@@ -50,6 +93,24 @@ func (f *fakeEmployeeRepo) Update(_ context.Context, emp *model.Employee) error 
 
 func (f *fakeEmployeeRepo) GetAll(_ context.Context, _, _, _, _ string, _, _ int) ([]model.Employee, int64, error) {
 	return f.allEmps, f.allTotal, f.getAllErr
+}
+
+type fakeClientRepo struct {
+	byIdentityID *model.Client
+
+	findErr   error
+	createErr error
+
+	createdClient *model.Client
+}
+
+func (f *fakeClientRepo) Create(_ context.Context, client *model.Client) error {
+	f.createdClient = client
+	return f.createErr
+}
+
+func (f *fakeClientRepo) FindByIdentityID(_ context.Context, _ uint) (*model.Client, error) {
+	return f.byIdentityID, f.findErr
 }
 
 type fakeActivationTokenRepo struct {
@@ -86,7 +147,7 @@ func (f *fakeResetTokenRepo) FindByToken(_ context.Context, _ string) (*model.Re
 	return f.token, f.findErr
 }
 
-func (f *fakeResetTokenRepo) DeleteByEmployeeID(_ context.Context, _ uint) error {
+func (f *fakeResetTokenRepo) DeleteByIdentityID(_ context.Context, _ uint) error {
 	return f.deleteErr
 }
 
@@ -105,7 +166,7 @@ func (f *fakeRefreshTokenRepo) FindByToken(_ context.Context, _ string) (*model.
 	return f.token, f.findErr
 }
 
-func (f *fakeRefreshTokenRepo) DeleteByEmployeeID(_ context.Context, _ uint) error {
+func (f *fakeRefreshTokenRepo) DeleteByIdentityID(_ context.Context, _ uint) error {
 	return f.deleteErr
 }
 
@@ -117,6 +178,8 @@ type fakePositionRepo struct {
 func (f *fakePositionRepo) Exists(_ context.Context, _ uint) (bool, error) {
 	return f.exists, f.existsErr
 }
+
+// --- Mailer Fake ---
 
 type fakeMailer struct {
 	sendErr error
@@ -144,28 +207,58 @@ func hashedPassword(plain string) string {
 	if err != nil {
 		panic(err)
 	}
-
 	return string(h)
+}
+
+func activeIdentity() *model.Identity {
+	return &model.Identity{
+		ID:           1,
+		Email:        "john@example.com",
+		Username:     "johndoe",
+		PasswordHash: hashedPassword("Password12"),
+		Type:         auth.IdentityEmployee,
+		Active:       true,
+	}
 }
 
 func activeEmployee() *model.Employee {
 	return &model.Employee{
 		EmployeeID: 1,
+		IdentityID: 1,
 		FirstName:  "John",
 		LastName:   "Doe",
-		Email:      "john@example.com",
-		Username:   "johndoe",
-		Password:   hashedPassword("Password12"),
-		Active:     true,
+		Identity:   *activeIdentity(),
 		Permissions: []model.EmployeePermission{
 			{EmployeeID: 1, Permission: permission.EmployeeView},
 		},
 	}
 }
 
-func withAuth(ctx context.Context, userID uint) context.Context {
+func activeClientIdentity() *model.Identity {
+	return &model.Identity{
+		ID:           2,
+		Email:        "client@example.com",
+		Username:     "clientuser",
+		PasswordHash: hashedPassword("Password12"),
+		Type:         auth.IdentityClient,
+		Active:       true,
+	}
+}
+
+func activeClient() *model.Client {
+	return &model.Client{
+		ClientID:   1,
+		IdentityID: 2,
+		FirstName:  "Jane",
+		LastName:   "Client",
+		Identity:   *activeClientIdentity(),
+	}
+}
+
+func withAuth(ctx context.Context, identityID uint, identityType auth.IdentityType) context.Context {
 	return auth.SetAuthOnContext(ctx, &auth.AuthContext{
-		UserID:      userID,
-		Permissions: []permission.Permission{permission.EmployeeView},
+		IdentityID:   identityID,
+		IdentityType: identityType,
+		Permissions:  []permission.Permission{permission.EmployeeView},
 	})
 }
