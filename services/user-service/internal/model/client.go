@@ -5,7 +5,7 @@ import "time"
 type Client struct {
 	ClientID    uint   `gorm:"primaryKey"`
 	IdentityID  uint   `gorm:"uniqueIndex;not null"`
-	FirstName   string `gorm:"size:50;not null"`
+	FirstName   string `gorm:"size:20;not null"`
 	LastName    string `gorm:"size:100;not null"`
 	DateOfBirth time.Time
 	Gender      string `gorm:"size:10"`

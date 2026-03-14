@@ -3,7 +3,7 @@ package dto
 import "time"
 
 type CreateClientRequest struct {
-	FirstName   string    `json:"first_name" binding:"required,max=50"`
+	FirstName   string    `json:"first_name" binding:"required,max=20"`
 	LastName    string    `json:"last_name" binding:"required,max=100"`
 	DateOfBirth time.Time `json:"date_of_birth"`
 	Gender      string    `json:"gender"`
