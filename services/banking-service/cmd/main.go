@@ -60,6 +60,9 @@ func main() {
 			handler.NewAccountHandler,
 			handler.NewCompanyHandler,
 			handler.NewPaymentHandler,
+			repository.NewTransferRepository,
+			service.NewTransferService,
+			handler.NewTransferHandler,
 		),
 		fx.Invoke(func(cfg *config.Configuration) error {
 			return logging.Init(cfg.Env)
