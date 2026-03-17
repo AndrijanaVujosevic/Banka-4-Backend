@@ -1,11 +1,9 @@
 package dto
 
 type CreatePaymentResponse struct {
-	ID     uint   `json:"id"`
-	Status string `json:"status"`
+	PaymentID uint   `json:"id"`
 }
 
 type VerifyPaymentResponse struct {
-	ID     uint   `json:"id"`
-	Status string `json:"status"`
+	PaymentID uint   `json:"id"`
 }

@@ -9,11 +9,12 @@ import (
 )
 
 type PaymentService struct {
-	repo repository.PaymentRepository
+	paymentRepo     repository.PaymentRepository
+	transactionRepo repository.TransactionRepository
 }
 
-func NewPaymentService(repo repository.PaymentRepository) *PaymentService {
-	return &PaymentService{repo: repo}
+func NewPaymentService(paymentRepo repository.PaymentRepository, transactionRepo repository.TransactionRepository) *PaymentService {
+	return &PaymentService{paymentRepo: paymentRepo, transactionRepo: transactionRepo}
 }
 
 func (s *PaymentService) CreatePayment(ctx context.Context, req dto.CreatePaymentRequest) (*model.Payment, error) {
@@ -22,21 +23,35 @@ func (s *PaymentService) CreatePayment(ctx context.Context, req dto.CreatePaymen
 	// TODO: proveriti limit
 	// TODO: proveriti postojanje računa (#45)
 
-	// TODO: currency conversion (#44)
+	// TODO: currency conversion and provision (#44)
+	var endAmount = req.Amount;
+	// TODO: get the right end currency code
+	var endCurrencyCode = req.CurrencyCode;
+
+	transaction := &model.Transaction{	
+		PayerAccountNumber:     req.PayerAccountNumber,
+		RecipientAccountNumber: req.RecipientAccountNumber,
+		StartAmount:            req.Amount,
+		StartCurrencyCode:      req.CurrencyCode,
+		EndAmount:         			endAmount,
+		EndCurrencyCode:        endCurrencyCode,
+		Status:                 model.TransactionProcessing,
+	}
+
+	err := s.transactionRepo.Create(ctx, transaction)
+	if err != nil {
+		return nil, errors.InternalErr(err)
+	}
 
 	payment := &model.Payment{
+		TransactionID:    transaction.TransactionID,
 		RecipientName:    req.RecipientName,
-		RecipientAccount: req.RecipientAccountNumber,
-		Amount:           req.Amount,
 		ReferenceNumber:  req.ReferenceNumber,
 		PaymentCode:      req.PaymentCode,
 		Purpose:          req.Purpose,
-		PayerAccount:     req.PayerAccount,
-		Currency:         req.Currency,
-		Status:           model.PaymentProcessing,
 	}
 
-	err := s.repo.Create(ctx, payment)
+	err = s.paymentRepo.Create(ctx, payment)
 	if err != nil {
 		return nil, errors.InternalErr(err)
 	}
@@ -46,22 +61,14 @@ func (s *PaymentService) CreatePayment(ctx context.Context, req dto.CreatePaymen
 
 func (s *PaymentService) VerifyPayment(ctx context.Context, id uint, code string) (*model.Payment, error) {
 
-	payment, err := s.repo.GetByID(ctx, id)
+	payment, err := s.paymentRepo.GetByID(ctx, id)
 	if err != nil {
 		return nil, errors.InternalErr(err)
 	}
 
-	// TODO: mobile verification
+	// TODO: mobile verification, update transaction status
 
-	if code == "1234" {
-		payment.Status = model.PaymentCompleted
-
-		// TODO: save recipient
-	} else {
-		payment.Status = model.PaymentRejected
-	}
-
-	err = s.repo.Update(ctx, payment)
+	err = s.paymentRepo.Update(ctx, payment)
 	if err != nil {
 		return nil, errors.InternalErr(err)
 	}
