@@ -3,6 +3,7 @@ package repository
 import (
 	"banking-service/internal/model"
 	"context"
+	"errors"
 
 	"gorm.io/gorm"
 )
@@ -29,4 +30,19 @@ func (r *accountRepository) AccountNumberExists(ctx context.Context, accountNumb
 		Error
 
 	return count > 0, err
+}
+
+func (r *accountRepository) GetByAccountNumber(ctx context.Context, accountNumber string) (*model.Account, error) {
+	var account model.Account
+	result := r.db.WithContext(ctx).Where("account_number = ?", accountNumber).First(&account)
+
+	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+
+	return &account, result.Error
+}
+
+func (r *accountRepository) Update(ctx context.Context, account *model.Account) error {
+	return r.db.WithContext(ctx).Save(account).Error
 }
