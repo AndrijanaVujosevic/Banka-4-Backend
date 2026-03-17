@@ -28,6 +28,7 @@ func NewServer(
 	healthHandler *handler.HealthHandler,
 	accountHandler *handler.AccountHandler,
 	companyHandler *handler.CompanyHandler,
+	exchangeHandler *handler.ExchangeHandler,
 	paymentHandler *handler.PaymentHandler,
 	verifier auth.TokenVerifier,
 	permissions auth.PermissionProvider,
@@ -35,7 +36,7 @@ func NewServer(
 	r := gin.New()
 
 	InitRouter(r, cfg)
-	SetupRoutes(r, healthHandler, accountHandler, companyHandler, paymentHandler, verifier, permissions)
+	SetupRoutes(r, healthHandler, accountHandler, companyHandler, exchangeHandler, paymentHandler, verifier, permissions)
 
 	server := &http.Server{
 		Addr:    ":" + cfg.Port,
@@ -68,6 +69,7 @@ func SetupRoutes(
 	healthHandler *handler.HealthHandler,
 	accountHandler *handler.AccountHandler,
 	companyHandler *handler.CompanyHandler,
+	exchangeHandler *handler.ExchangeHandler,
 	paymentHandler *handler.PaymentHandler,
 	verifier auth.TokenVerifier,
 	permissions auth.PermissionProvider,
@@ -89,6 +91,13 @@ func SetupRoutes(
 		{
 			companies.POST("", companyHandler.Create)
 		}
+
+		exchange := api.Group("/exchange")
+		{
+			exchange.GET("/rates", exchangeHandler.GetRates)
+			exchange.GET("/calculate", exchangeHandler.Calculate)
+    }
+    
 		payments := api.Group("/payments")
 		payments.Use(auth.Middleware(verifier, permissions))
 		{
