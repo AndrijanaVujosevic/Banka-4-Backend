@@ -33,15 +33,14 @@ func (h *PaymentHandler) CreatePayment(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, dto.CreatePaymentResponse{
-		ID:     payment.ID,
-		Status: string(payment.Status),
+		PaymentID: payment.PaymentID,
 	})
 }
 
 func (h *PaymentHandler) VerifyPayment(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	id, err := strconv.ParseUint(c.Param("payment_id"), 10, 64)
 	if err != nil {
-		c.Error(errors.BadRequestErr("invalid payment ID"))
+		c.Error(errors.BadRequestErr("invalid payment id"))
 		return
 	}
 
@@ -58,7 +57,6 @@ func (h *PaymentHandler) VerifyPayment(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, dto.VerifyPaymentResponse{
-		ID:     payment.ID,
-		Status: string(payment.Status),
+		PaymentID: payment.PaymentID,
 	})
 }

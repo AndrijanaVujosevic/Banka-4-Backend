@@ -54,6 +54,7 @@ func main() {
 			repository.NewAccountRepository,
 			repository.NewCompanyRepository,
 			repository.NewPaymentRepository,
+			repository.NewTransactionRepository,
 			service.NewAccountService,
 			service.NewCompanyService,
 			service.NewPaymentService,
@@ -70,6 +71,7 @@ func main() {
 				&model.WorkCode{},
 				&model.Company{},
 				&model.Account{},
+				&model.Transaction{},
 				&model.Payment{},
 			); err != nil {
 				return err
