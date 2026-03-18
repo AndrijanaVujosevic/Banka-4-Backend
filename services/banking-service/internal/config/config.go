@@ -17,6 +17,14 @@ type DBConfig struct {
 	DBName   string
 }
 
+type SMTPConfig struct {
+	Host string
+	Port string
+	User string
+	Pass string
+	From string
+}
+
 type URLConfig struct {
 	FrontendBaseURL string
 	BackendBaseURL  string
@@ -27,13 +35,15 @@ func (c *DBConfig) DSN() string {
 }
 
 type Configuration struct {
-	Env             string
-	Port            string
-	DB              DBConfig
-	JWTSecret       string
-	GrpcPort        string // reserved for future banking-service gRPC endpoints
-	UserServiceAddr string
-	URLs            URLConfig
+	Env                string
+	Port               string
+	DB                 DBConfig
+  SMTP SMTPConfig
+	JWTSecret          string
+	GrpcPort           string // reserved for future banking-service gRPC endpoints
+	UserServiceAddr    string
+	ExchangeRateAPIKey string
+	URLs               URLConfig
 }
 
 func GetAsIntOrDefault(env string, defaultValue int) int {
@@ -74,13 +84,21 @@ func Load() *Configuration {
 		Env:             GetOrDefault("ENV", "development"),
 		Port:            GetOrDefault("PORT", "8081"),
 		JWTSecret:       GetOrThrow("JWT_SECRET"),
-		UserServiceAddr: GetOrDefault("USER_SERVICE_ADDR", "localhost:50051"),
+		UserServiceAddr:    GetOrDefault("USER_SERVICE_ADDR", "localhost:50051"),
+		ExchangeRateAPIKey: GetOrThrow("EXCHANGE_RATE_API_KEY"),
 		DB: DBConfig{
 			Host:     GetOrThrow("DB_HOST"),
 			Port:     GetOrThrow("DB_PORT"),
 			User:     GetOrThrow("DB_USER"),
 			Password: GetOrThrow("DB_PASS"),
 			DBName:   GetOrThrow("DB_NAME"),
+		},
+		SMTP: SMTPConfig{
+			Host: GetOrThrow("SMTP_HOST"),
+			Port: GetOrDefault("SMTP_PORT", "587"),
+			User: GetOrDefault("SMTP_USER", ""),
+			Pass: GetOrDefault("SMTP_PASS", ""),
+			From: GetOrThrow("EMAIL_FROM"),
 		},
 		URLs: URLConfig{
 			FrontendBaseURL: GetOrDefault("FRONTEND_BASE_URL", "http://localhost:5173"),

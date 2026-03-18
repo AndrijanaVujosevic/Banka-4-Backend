@@ -2,6 +2,7 @@ package repository
 
 import (
 	"banking-service/internal/model"
+	"common/pkg/db"
 	"context"
 	"errors"
 
@@ -32,17 +33,28 @@ func (r *accountRepository) AccountNumberExists(ctx context.Context, accountNumb
 	return count > 0, err
 }
 
-func (r *accountRepository) GetByAccountNumber(ctx context.Context, accountNumber string) (*model.Account, error) {
-	var account model.Account
-	result := r.db.WithContext(ctx).Where("account_number = ?", accountNumber).First(&account)
+func (r *accountRepository) FindByAccountNumber(ctx context.Context, accountNumber string) (*model.Account, error) {
+	db := db.DBFromContext(ctx, r.db)
 
-	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+	var account model.Account
+	err := db.WithContext(ctx).Preload("Currency").First(&account, accountNumber).Error
+
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}
-
-	return &account, result.Error
+	if err != nil {
+		return nil, err
+	}
+	return &account, nil
 }
 
-func (r *accountRepository) Update(ctx context.Context, account *model.Account) error {
-	return r.db.WithContext(ctx).Save(account).Error
+func (r *accountRepository) UpdateBalance(ctx context.Context, account *model.Account) error {
+  db := db.DBFromContext(ctx, r.db)
+  
+	return db.WithContext(ctx).Model(account).Updates(map[string]interface{}{
+		"balance":           account.Balance,
+		"available_balance": account.AvailableBalance,
+		"daily_spending":    account.DailySpending,
+		"monthly_spending":  account.MonthlySpending,
+	}).Error
 }

@@ -2,6 +2,7 @@ package repository
 
 import (
 	"banking-service/internal/model"
+	"common/pkg/db"
 	"context"
 	"errors"
 
@@ -21,14 +22,19 @@ func (r *transactionRepository) Create(ctx context.Context, transaction *model.T
 }
 
 func (r *transactionRepository) GetByID(ctx context.Context, id uint) (*model.Transaction, error) {
+	db := db.DBFromContext(ctx, r.db)
+
 	var transaction model.Transaction
-	result := r.db.WithContext(ctx).First(&transaction, id)
-
-	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
-		return nil, nil
+	if err := db.WithContext(ctx).First(&transaction, id).Error; err != nil {
+		return nil, err
 	}
+	return &transaction, nil
+}
 
-	return &transaction, result.Error
+func (r *transactionRepository) Update(ctx context.Context, transaction *model.Transaction) error {
+	db := db.DBFromContext(ctx, r.db)
+
+	return db.WithContext(ctx).Save(transaction).Error
 }
 
 func (r *transactionRepository) GetByPayerAccountNumber(ctx context.Context, accountNumber string) ([]*model.Transaction, error) {
@@ -47,8 +53,4 @@ func (r *transactionRepository) GetByRecipientAccountNumber(ctx context.Context,
 		return nil, err
 	}
 	return transactions, nil
-}
-
-func (r *transactionRepository) Update(ctx context.Context, transaction *model.Transaction) error {
-	return r.db.WithContext(ctx).Save(transaction).Error
 }
