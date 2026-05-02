@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -37,7 +38,7 @@ func (f *fakePermissionProvider) GetPermissions(_ context.Context, _ *jwt.Claims
 
 func init() {
 	gin.SetMode(gin.TestMode)
-	logging.Init("test")
+	_ = logging.Init("test")
 }
 
 func middlewareRouter(verifier auth.TokenVerifier, provider auth.PermissionProvider) *gin.Engine {
@@ -413,4 +414,57 @@ func TestGetSubjectFromContext_InvalidIdentityType(t *testing.T) {
 
 func uintPtr(v uint) *uint {
 	return &v
+}
+
+func TestAnyOf_AllowsSingleExecution(t *testing.T) {
+	t.Parallel()
+
+	var executions int32
+
+	router := gin.New()
+	router.Use(errors.ErrorHandler())
+	router.GET(
+		"/test",
+		auth.AnyOf(
+			func(c *gin.Context) {
+				_ = c.Error(errors.ForbiddenErr("first denied"))
+				c.Abort()
+			},
+			func(c *gin.Context) {
+				c.Next()
+			},
+		),
+		func(c *gin.Context) {
+			atomic.AddInt32(&executions, 1)
+			c.JSON(http.StatusOK, gin.H{"ok": true})
+		},
+	)
+
+	w := doGetPath(router, "/test")
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, int32(1), atomic.LoadInt32(&executions))
+}
+
+func TestAnyOf_DeniesWhenNoMiddlewareMatches(t *testing.T) {
+	t.Parallel()
+
+	router := gin.New()
+	router.Use(errors.ErrorHandler())
+	router.GET(
+		"/test",
+		auth.AnyOf(
+			func(c *gin.Context) {
+				_ = c.Error(errors.ForbiddenErr("first denied"))
+				c.Abort()
+			},
+			func(c *gin.Context) {
+				_ = c.Error(errors.ForbiddenErr("second denied"))
+				c.Abort()
+			},
+		),
+		func(c *gin.Context) { c.Status(http.StatusOK) },
+	)
+
+	w := doGetPath(router, "/test")
+	require.Equal(t, http.StatusForbidden, w.Code)
 }

@@ -248,6 +248,66 @@ func Run(db *gorm.DB) error {
 		}
 	}
 
+	traderClientEmails := []string{
+		"marko.markovic@example.com",
+		"ana.anic@example.com",
+		"stefan.stefanovic@example.com",
+	}
+
+	for _, email := range traderClientEmails {
+		var clientIdentity model.Identity
+		if err := db.Where("email = ?", email).First(&clientIdentity).Error; err != nil {
+			return err
+		}
+
+		var traderClient model.Client
+		if err := db.Where("identity_id = ?", clientIdentity.ID).First(&traderClient).Error; err != nil {
+			return err
+		}
+
+		var existingPerms model.ClientPermission
+		if err := db.Where("client_id = ?", traderClient.ClientID).First(&existingPerms).Error; err == nil {
+			continue // already seeded
+		}
+
+		perm := model.ClientPermission{
+			ClientID:   traderClient.ClientID,
+			Permission: permission.Trading,
+		}
+		if err := db.FirstOrCreate(&perm, perm).Error; err != nil {
+			return err
+		}
+	}
+
+	marginClientEmails := []string{
+		"marko.markovic@example.com",
+	}
+
+	for _, email := range marginClientEmails {
+		var clientIdentity model.Identity
+		if err := db.Where("email = ?", email).First(&clientIdentity).Error; err != nil {
+			return err
+		}
+
+		var traderClient model.Client
+		if err := db.Where("identity_id = ?", clientIdentity.ID).First(&traderClient).Error; err != nil {
+			return err
+		}
+
+		var existingPerms model.ClientPermission
+		if err := db.Where("client_id = ?", traderClient.ClientID).First(&existingPerms).Error; err == nil {
+			continue // already seeded
+		}
+
+		perm := model.ClientPermission{
+			ClientID:   traderClient.ClientID,
+			Permission: permission.TradingMargin,
+		}
+		if err := db.FirstOrCreate(&perm, perm).Error; err != nil {
+			return err
+		}
+	}
+
 	adminEmails := []string{
 		"admin@raf.rs",
 		"adminnovi@raf.rs",

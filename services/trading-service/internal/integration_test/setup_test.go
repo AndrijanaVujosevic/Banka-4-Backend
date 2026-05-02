@@ -10,7 +10,6 @@ import (
 	"log"
 	"net/http/httptest"
 	"os"
-	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -80,6 +79,9 @@ func TestMain(m *testing.M) {
 		&model.TaxCollection{},
 		&model.OtcOffer{},
 		&model.OtcOptionContract{},
+		&model.InvestmentFund{},
+		&model.ClientFundPosition{},
+		&model.ClientFundInvestment{},
 	); err != nil {
 		log.Fatalf("auto migrate test schema: %v", err)
 	}
@@ -97,13 +99,16 @@ func TestMain(m *testing.M) {
 type fakeUserClient struct {
 	supervisorIDs map[uint64]bool
 	agentIDs      map[uint64]bool
+	identityResp  *pb.GetIdentityByUserIdResponse
+	identityErr   error
 }
 
 func (f *fakeUserClient) GetClientById(_ context.Context, id uint64) (*pb.GetClientByIdResponse, error) {
 	return &pb.GetClientByIdResponse{
-		Id:       id,
-		Email:    fmt.Sprintf("client-%d@example.com", id),
-		FullName: fmt.Sprintf("Client %d", id),
+		Id:         id,
+		Email:      fmt.Sprintf("client-%d@example.com", id),
+		FullName:   fmt.Sprintf("Client %d", id),
+		IdentityId: id,
 	}, nil
 }
 
@@ -120,6 +125,29 @@ func (f *fakeUserClient) GetEmployeeById(_ context.Context, id uint64) (*pb.GetE
 		FullName:     fmt.Sprintf("Employee %d", id),
 		IsSupervisor: isSupervisor,
 		IsAgent:      isAgent,
+		IdentityId:   id,
+	}, nil
+}
+
+func (f *fakeUserClient) GetClientByIdentityId(_ context.Context, id uint64) (*pb.GetClientByIdResponse, error) {
+	return &pb.GetClientByIdResponse{
+		Id:         id,
+		Email:      fmt.Sprintf("client-%d@example.com", id),
+		FullName:   fmt.Sprintf("Client %d", id),
+		IdentityId: id,
+	}, nil
+}
+
+func (f *fakeUserClient) GetEmployeeByIdentityId(_ context.Context, id uint64) (*pb.GetEmployeeByIdResponse, error) {
+	isSupervisor := f.supervisorIDs[id]
+	isAgent := f.agentIDs[id]
+	return &pb.GetEmployeeByIdResponse{
+		Id:           id,
+		Email:        fmt.Sprintf("employee-%d@example.com", id),
+		FullName:     fmt.Sprintf("Employee %d", id),
+		IsSupervisor: isSupervisor,
+		IsAgent:      isAgent,
+		IdentityId:   id,
 	}, nil
 }
 
@@ -141,6 +169,10 @@ func (f *fakeUserClient) GetAllActuaries(_ context.Context, _, _ int32, _, _ str
 	}, nil
 }
 
+func (c *fakeUserClient) GetIdentityByUserId(_ context.Context, _ uint64, _ string) (*pb.GetIdentityByUserIdResponse, error) {
+	return c.identityResp, c.identityErr
+}
+
 type fakeTaxRecorder struct{}
 
 func (f *fakeTaxRecorder) RecordTax(_ context.Context, _ string, _ *uint, _ float64, _ string) error {
@@ -158,7 +190,9 @@ func (f *fakeBankingClient) GetAccountByNumber(_ context.Context, accountNumber 
 		AvailableBalance: 1_000_000,
 	}, nil
 }
-
+func (f *fakeBankingClient) CreateFundAccount(_ context.Context, fundName string, _ uint64) (string, error) {
+	return fmt.Sprintf("444000199999%06d", uniqueCounter.Add(1)), nil
+}
 func (f *fakeBankingClient) HasActiveLoan(_ context.Context, _ uint64) (*pb.HasActiveLoanResponse, error) {
 	return &pb.HasActiveLoanResponse{HasActiveLoan: true}, nil
 }
@@ -252,13 +286,18 @@ func setupTestRouterWithPermissions(t *testing.T, db *gorm.DB, perms []permissio
 
 	exchangeSvc := service.NewExchangeService(exchangeRepo)
 	listingSvc := service.NewListingService(listingRepo, futuresRepo, forexRepo, optionRepo)
+	fundRepo := repository.NewInvestmentFundRepository(db)
+	positionRepo := repository.NewClientFundPositionRepository(db)
+	investmentRepo := repository.NewClientFundInvestmentRepository(db)
+	fundSvc := service.NewInvestmentFundService(fundRepo, positionRepo, listingRepo, investmentRepo, assetOwnershipRepo, exchangeRepo, bankingClient, userClient)
+	fundHandler := handler.NewInvestmentFundHandler(fundSvc)
 
 	var taxRecorder service.TaxRecorder = &fakeTaxRecorder{}
-	orderSvc := service.NewOrderService(orderRepo, orderTxRepo, exchangeRepo, listingRepo, assetOwnershipRepo, futuresRepo, optionRepo, userClient, bankingClient, taxRecorder)
-	portfolioSvc := service.NewPortfolioService(assetOwnershipRepo, stockRepo, optionRepo, futuresRepo, forexRepo, bankingClient)
-	otcSvc := service.NewOtcOfferService(otcOfferRepo, otcContractRepo, assetOwnershipRepo, stockRepo, bankingClient)
+	orderSvc := service.NewOrderService(orderRepo, orderTxRepo, exchangeRepo, listingRepo, assetOwnershipRepo, futuresRepo, optionRepo, fundRepo, userClient, bankingClient, taxRecorder)
+	portfolioSvc := service.NewPortfolioService(assetOwnershipRepo, stockRepo, optionRepo, futuresRepo, forexRepo, bankingClient, userClient)
 
 	taxSvc := service.NewTaxService(taxRepo, bankingClient, cfg)
+	otcSvc := service.NewOTCService(assetOwnershipRepo, listingRepo, userClient)
 
 	healthHandler := handler.NewHealthHandler()
 	exchangeHandler := handler.NewExchangeHandler(exchangeSvc)
@@ -266,13 +305,13 @@ func setupTestRouterWithPermissions(t *testing.T, db *gorm.DB, perms []permissio
 	orderHandler := handler.NewOrderHandler(orderSvc)
 	portfolioHandler := handler.NewPortfolioHandler(portfolioSvc)
 	taxHandler := handler.NewTaxHandler(taxSvc, userClient)
-	otcHandler := handler.NewOtcOfferHandler(otcSvc)
+	otcHandler := handler.NewOTCHandler(otcSvc)
 
 	verifier := auth.TokenVerifier(commonjwt.NewJWTVerifier(cfg.JWTSecret))
 
 	r := gin.New()
 	server.InitRouter(r, cfg)
-	server.SetupRoutes(r, healthHandler, taxHandler, exchangeHandler, orderHandler, portfolioHandler, listingHandler, verifier, permProvider, userClient, otcHandler)
+	server.SetupRoutes(r, healthHandler, taxHandler, exchangeHandler, orderHandler, portfolioHandler, listingHandler, otcHandler, fundHandler, verifier, permProvider, userClient)
 
 	return r, userClient
 }
@@ -421,16 +460,16 @@ func seedOrder(t *testing.T, db *gorm.DB, userID, listingID uint, direction mode
 	t.Helper()
 
 	order := &model.Order{
-		UserID:        userID,
-		AccountNumber: "444000100000000001",
-		ListingID:     listingID,
-		OrderType:     model.OrderTypeMarket,
-		Direction:     direction,
-		Quantity:      10,
-		ContractSize:  1,
-		Status:        status,
-		CreatedAt:     time.Now(),
-		UpdatedAt:     time.Now(),
+		OrderOwnerUserID: userID,
+		AccountNumber:    "444000100000000001",
+		ListingID:        listingID,
+		OrderType:        model.OrderTypeMarket,
+		Direction:        direction,
+		Quantity:         10,
+		ContractSize:     1,
+		Status:           status,
+		CreatedAt:        time.Now(),
+		UpdatedAt:        time.Now(),
 	}
 
 	if err := db.Create(order).Error; err != nil {
@@ -458,6 +497,24 @@ func seedDailyPriceInfo(t *testing.T, db *gorm.DB, listingID uint) {
 	}
 }
 
+func seedInvestmentFund(t *testing.T, db *gorm.DB, name string, managerID uint) *model.InvestmentFund {
+	t.Helper()
+
+	fund := &model.InvestmentFund{
+		Name:                name,
+		Description:         fmt.Sprintf("Description for %s", name),
+		MinimumContribution: 1000.0,
+		ManagerID:           managerID,
+		AccountNumber:       fmt.Sprintf("444000199999%06d", uniqueCounter.Add(1)),
+		CreatedAt:           time.Now(),
+	}
+
+	if err := db.Create(fund).Error; err != nil {
+		t.Fatalf("seed investment fund: %v", err)
+	}
+
+	return fund
+}
 func authHeaderForSupervisor(t *testing.T) string {
 	t.Helper()
 
@@ -508,11 +565,7 @@ func authHeaderForClient(t *testing.T, identityID, clientID uint) string {
 
 func uniqueValue(t *testing.T, prefix string) string {
 	t.Helper()
-	name := strings.NewReplacer("/", "-", " ", "-", ":", "-").Replace(strings.ToLower(t.Name()))
-	if len(name) > 15 {
-		name = name[:15]
-	}
-	return fmt.Sprintf("%s-%s-%d-%d", prefix, name, time.Now().UnixNano(), uniqueCounter.Add(1))
+	return fmt.Sprintf("%s%d", prefix, uniqueCounter.Add(1))
 }
 
 func performRequest(t *testing.T, router *gin.Engine, method, path string, body any, authorization string) *httptest.ResponseRecorder {

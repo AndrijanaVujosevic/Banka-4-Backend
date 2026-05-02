@@ -142,16 +142,16 @@ func (f *fakeBankingClient) ExecuteTradeSettlement(ctx context.Context, accountN
 	return nil, nil
 }
 
+func (f *fakeBankingClient) CreateFundAccount(ctx context.Context, fundName string, managerID uint64) (string, error) {
+	return "", nil
+}
+
 // ── Constructor ────────────────────────────────────────────────────
 
 func newTestTaxService(repo *fakeTaxRepo, banking *fakeBankingClient) *TaxService {
 	return NewTaxService(repo, banking, &config.Configuration{
 		TaxAccountNumber: "444000000000000000",
 	})
-}
-
-func uintPtr(v uint) *uint {
-	return &v
 }
 
 // ── RecordTax Tests ────────────────────────────────────────────────

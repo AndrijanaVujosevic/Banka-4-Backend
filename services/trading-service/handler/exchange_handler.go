@@ -28,11 +28,11 @@ func NewExchangeHandler(service *service.ExchangeService) *ExchangeHandler {
 // @Success 200 {object} map[string]interface{}
 // @Failure 400 {object} map[string]string
 // @Failure 500 {object} map[string]string
-// @Router /api/exchange [get]
+// @Router /api/exchanges [get]
 func (h *ExchangeHandler) GetAll(c *gin.Context) {
 	var query dto.ListExchangesQuery
 	if err := c.ShouldBindQuery(&query); err != nil {
-		c.Error(errors.BadRequestErr(err.Error()))
+		_ = c.Error(errors.BadRequestErr(err.Error()))
 		return
 	}
 
@@ -45,7 +45,7 @@ func (h *ExchangeHandler) GetAll(c *gin.Context) {
 
 	exchanges, total, err := h.service.GetAll(c.Request.Context(), query.Page, query.PageSize)
 	if err != nil {
-		c.Error(err)
+		_ = c.Error(err)
 		return
 	}
 
@@ -66,13 +66,13 @@ func (h *ExchangeHandler) GetAll(c *gin.Context) {
 // @Success 200 {object} dto.ExchangeResponse
 // @Failure 404 {object} map[string]string
 // @Failure 500 {object} map[string]string
-// @Router /api/exchange/{micCode}/toggle [patch]
+// @Router /api/exchanges/{micCode}/toggle [patch]
 func (h *ExchangeHandler) ToggleTradingEnabled(c *gin.Context) {
 	micCode := c.Param("micCode")
 
 	exchange, err := h.service.ToggleTradingEnabled(c.Request.Context(), micCode)
 	if err != nil {
-		c.Error(err)
+		_ = c.Error(err)
 		return
 	}
 	c.JSON(http.StatusOK, dto.ToExchangeResponse(*exchange))

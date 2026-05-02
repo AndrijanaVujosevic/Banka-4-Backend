@@ -102,6 +102,13 @@ func main() {
 			repository.NewOtcOptionContractRepository,
 			service.NewOtcOfferService,
 			handler.NewOtcOfferHandler,
+			service.NewOTCService,
+			handler.NewOTCHandler,
+			repository.NewInvestmentFundRepository,
+			repository.NewClientFundPositionRepository,
+			repository.NewClientFundInvestmentRepository,
+			service.NewInvestmentFundService,
+			handler.NewInvestmentFundHandler,
 		),
 		fx.Invoke(func(cfg *config.Configuration) error {
 			return logging.Init(cfg.Env)
@@ -131,6 +138,10 @@ func main() {
 				&model.TaxCollection{},
 				&model.OtcOffer{},
 				&model.OtcOptionContract{},
+				&model.InvestmentFund{},
+				&model.ClientFundPosition{},
+				&model.ClientFundInvestment{},
+				&model.FundPerformance{},
 			)
 		}),
 		fx.Invoke(func(lc fx.Lifecycle, svc *service.StockService) {
@@ -149,6 +160,7 @@ func main() {
 		fx.Invoke(func(db *gorm.DB) error {
 			return seed.SeedFuturesContracts(db)
 		}),
+		fx.Invoke(func(db *gorm.DB) error { return seed.InvestmentFunds(db) }),
 		fx.Invoke(func(db *gorm.DB) error {
 			return seed.AccumulatedTax(db)
 		}),

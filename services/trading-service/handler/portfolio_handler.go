@@ -31,18 +31,19 @@ func NewPortfolioHandler(service *service.PortfolioService) *PortfolioHandler {
 // @Failure 400 {object} errors.AppError
 // @Failure 401 {object} errors.AppError
 // @Failure 403 {object} errors.AppError
+// @Failure 404 {object} errors.AppError
 // @Failure 500 {object} errors.AppError
 // @Router /api/client/{clientId}/assets [get]
 func (h *PortfolioHandler) GetClientPortfolio(c *gin.Context) {
 	clientID, err := strconv.ParseUint(c.Param("clientId"), 10, 64)
 	if err != nil {
-		c.Error(pkgerrors.BadRequestErr("invalid client id"))
+		_ = c.Error(pkgerrors.BadRequestErr("invalid client id"))
 		return
 	}
 
-	assets, err := h.service.GetPortfolio(c.Request.Context(), uint(clientID), model.OwnerTypeClient)
+	assets, err := h.service.GetClientPortfolio(c.Request.Context(), uint(clientID))
 	if err != nil {
-		c.Error(err)
+		_ = c.Error(err)
 		return
 	}
 
@@ -60,18 +61,19 @@ func (h *PortfolioHandler) GetClientPortfolio(c *gin.Context) {
 // @Failure 400 {object} errors.AppError
 // @Failure 401 {object} errors.AppError
 // @Failure 403 {object} errors.AppError
+// @Failure 404 {object} errors.AppError
 // @Failure 500 {object} errors.AppError
 // @Router /api/actuary/{actId}/assets [get]
 func (h *PortfolioHandler) GetActuaryPortfolio(c *gin.Context) {
 	actID, err := strconv.ParseUint(c.Param("actId"), 10, 64)
 	if err != nil {
-		c.Error(pkgerrors.BadRequestErr("invalid actuary id"))
+		_ = c.Error(pkgerrors.BadRequestErr("invalid actuary id"))
 		return
 	}
 
-	assets, err := h.service.GetPortfolio(c.Request.Context(), uint(actID), model.OwnerTypeActuary)
+	assets, err := h.service.GetActuaryPortfolio(c.Request.Context(), uint(actID))
 	if err != nil {
-		c.Error(err)
+		_ = c.Error(err)
 		return
 	}
 
@@ -89,18 +91,19 @@ func (h *PortfolioHandler) GetActuaryPortfolio(c *gin.Context) {
 // @Failure 400 {object} errors.AppError
 // @Failure 401 {object} errors.AppError
 // @Failure 403 {object} errors.AppError
+// @Failure 404 {object} errors.AppError
 // @Failure 500 {object} errors.AppError
 // @Router /api/client/{clientId}/assets/profit [get]
 func (h *PortfolioHandler) GetClientPortfolioProfit(c *gin.Context) {
 	clientID, err := strconv.ParseUint(c.Param("clientId"), 10, 64)
 	if err != nil {
-		c.Error(pkgerrors.BadRequestErr("invalid client id"))
+		_ = c.Error(pkgerrors.BadRequestErr("invalid client id"))
 		return
 	}
 
-	assets, err := h.service.GetPortfolio(c.Request.Context(), uint(clientID), model.OwnerTypeClient)
+	assets, err := h.service.GetClientPortfolio(c.Request.Context(), uint(clientID))
 	if err != nil {
-		c.Error(err)
+		_ = c.Error(err)
 		return
 	}
 
@@ -123,18 +126,19 @@ func (h *PortfolioHandler) GetClientPortfolioProfit(c *gin.Context) {
 // @Failure 400 {object} errors.AppError
 // @Failure 401 {object} errors.AppError
 // @Failure 403 {object} errors.AppError
+// @Failure 404 {object} errors.AppError
 // @Failure 500 {object} errors.AppError
 // @Router /api/actuary/{actId}/assets/profit [get]
 func (h *PortfolioHandler) GetActuaryPortfolioProfit(c *gin.Context) {
 	actID, err := strconv.ParseUint(c.Param("actId"), 10, 64)
 	if err != nil {
-		c.Error(pkgerrors.BadRequestErr("invalid actuary id"))
+		_ = c.Error(pkgerrors.BadRequestErr("invalid actuary id"))
 		return
 	}
 
-	assets, err := h.service.GetPortfolio(c.Request.Context(), uint(actID), model.OwnerTypeActuary)
+	assets, err := h.service.GetActuaryPortfolio(c.Request.Context(), uint(actID))
 	if err != nil {
-		c.Error(err)
+		_ = c.Error(err)
 		return
 	}
 
@@ -144,4 +148,95 @@ func (h *PortfolioHandler) GetActuaryPortfolioProfit(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, dto.PortfolioProfitResponse{TotalProfitRSD: total})
+}
+
+// GetAllActuaryProfits godoc
+// @Summary Get actuary profits
+// @Description Returns paginated list of actuaries with their profits (agents and supervisors)
+// @Tags profit
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Param page query int false "Page number" default(1)
+// @Param page_size query int false "Page size" default(10)
+// @Param first_name query string false "Filter by first name"
+// @Param last_name query string false "Filter by last name"
+// @Success 200 {array} dto.ActuaryProfitResponse
+// @Failure 400 {object} errors.AppError
+// @Failure 500 {object} errors.AppError
+// @Router /api/profit/actuaries [get]
+func (h *PortfolioHandler) GetAllActuaryProfits(c *gin.Context) {
+	page, err := strconv.Atoi(c.DefaultQuery("page", "1"))
+	if err != nil {
+		_ = c.Error(pkgerrors.BadRequestErr("invalid page"))
+		return
+	}
+
+	pageSize, err := strconv.Atoi(c.DefaultQuery("page_size", "10"))
+	if err != nil {
+		_ = c.Error(pkgerrors.BadRequestErr("invalid page size"))
+		return
+	}
+
+	firstName := c.Query("first_name")
+	lastName := c.Query("last_name")
+
+	res, err := h.service.GetAllActuaryProfits(
+		c.Request.Context(),
+		int32(page),
+		int32(pageSize),
+		firstName,
+		lastName,
+	)
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	c.JSON(http.StatusOK, res)
+}
+
+// ExerciseOption godoc
+// @Summary Exercise an owned option
+// @Description Exercises one contract of an actuary-owned in-the-money call option and buys the underlying stock at the strike price.
+// @Tags portfolio
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Param actId path int true "Actuary ID"
+// @Param assetId path int true "Option asset ID"
+// @Param request body dto.ExerciseOptionRequest true "Exercise request"
+// @Success 200 {object} dto.ExerciseOptionResponse
+// @Failure 400 {object} errors.AppError
+// @Failure 401 {object} errors.AppError
+// @Failure 403 {object} errors.AppError
+// @Failure 404 {object} errors.AppError
+// @Failure 500 {object} errors.AppError
+// @Router /api/actuary/{actId}/options/{assetId}/exercise [post]
+func (h *PortfolioHandler) ExerciseOption(c *gin.Context) {
+	actID, err := strconv.ParseUint(c.Param("actId"), 10, 64)
+	if err != nil {
+		_ = c.Error(pkgerrors.BadRequestErr("invalid actuary id"))
+		return
+	}
+
+	assetID, err := strconv.ParseUint(c.Param("assetId"), 10, 64)
+	if err != nil {
+		_ = c.Error(pkgerrors.BadRequestErr("invalid asset id"))
+		return
+	}
+
+	var req dto.ExerciseOptionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		_ = c.Error(pkgerrors.BadRequestErr(err.Error()))
+		return
+	}
+
+	resp, err := h.service.ExerciseOption(c.Request.Context(), uint(actID), model.OwnerTypeActuary, uint(assetID), req.AccountNumber)
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+
+	c.JSON(http.StatusOK, resp)
 }
