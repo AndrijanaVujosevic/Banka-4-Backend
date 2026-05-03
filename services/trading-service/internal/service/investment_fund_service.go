@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"fmt"
-	"log"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -292,7 +291,6 @@ func (s *InvestmentFundService) InvestInFund(ctx context.Context, fundID uint, r
 
 	fund, err := s.fundRepo.FindByID(ctx, fundID)
 	if err != nil {
-		log.Printf("error fetching fund: %v", err)
 		return nil, commonErrors.InternalErr(err)
 	}
 	if fund == nil {
