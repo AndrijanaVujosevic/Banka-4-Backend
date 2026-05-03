@@ -18,5 +18,5 @@ type OtcOptionContractRepository interface {
 
 	// FindActiveBySellerAndStock — neiskorišćeni ugovori sa SettlementDate > now,
 	// koji još drže prodavčeve akcije rezervisane (validacija kapaciteta po speci).
-	FindActiveBySellerAndStock(ctx context.Context, sellerID, stockID uint, now time.Time) ([]model.OtcOptionContract, error)
+	FindActiveBySellerAndStock(ctx context.Context, sellerID, stockAssetID uint, now time.Time) ([]model.OtcOptionContract, error)
 }

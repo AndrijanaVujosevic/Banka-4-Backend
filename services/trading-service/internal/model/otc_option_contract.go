@@ -23,8 +23,8 @@ type OtcOptionContract struct {
 	SellerID uint `gorm:"not null;index"`
 
 	// Predmet ugovora.
-	StockID uint `gorm:"not null;index"`
-	Stock   Stock
+	StockAssetID uint `gorm:"not null;index"`
+	Stock        Stock `gorm:"foreignKey:StockAssetID;references:AssetID"`
 
 	// Parametri ugovora — fiksirani u trenutku prihvatanja.
 	Amount         int       `gorm:"not null"`

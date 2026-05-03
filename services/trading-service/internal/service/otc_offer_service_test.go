@@ -61,7 +61,7 @@ func (r *fakeOtcOfferRepo) FindActiveForUser(_ context.Context, userID uint) ([]
 func (r *fakeOtcOfferRepo) FindActiveBySellerAndStock(_ context.Context, sellerID, stockID uint, excludeID *uint) ([]model.OtcOffer, error) {
 	var out []model.OtcOffer
 	for _, o := range r.offers {
-		if o.Status != model.OtcOfferStatusActive || o.SellerID != sellerID || o.StockID != stockID {
+		if o.Status != model.OtcOfferStatusActive || o.SellerID != sellerID || o.StockAssetID != stockID {
 			continue
 		}
 		if excludeID != nil && o.OtcOfferID == *excludeID {
@@ -117,7 +117,7 @@ func (r *fakeOtcContractRepo) FindForUser(_ context.Context, userID uint) ([]mod
 func (r *fakeOtcContractRepo) FindActiveBySellerAndStock(_ context.Context, sellerID, stockID uint, now time.Time) ([]model.OtcOptionContract, error) {
 	var out []model.OtcOptionContract
 	for _, c := range r.contracts {
-		if c.SellerID == sellerID && c.StockID == stockID && !c.IsExercised && c.SettlementDate.After(now) {
+		if c.SellerID == sellerID && c.StockAssetID == stockID && !c.IsExercised && c.SettlementDate.After(now) {
 			out = append(out, *c)
 		}
 	}
@@ -169,16 +169,20 @@ func (r *fakeOtcAssetOwnershipRepo) IncreaseReservedAmount(_ context.Context, id
 }
 
 func (r *fakeOtcAssetOwnershipRepo) FindByID(_ context.Context, id uint) (*model.AssetOwnership, error) {
+	for _, v := range r.ownerships {
+		if v.AssetID == id {
+			return v, nil
+		}
+	}
 	return nil, nil
 }
 func (r *fakeOtcAssetOwnershipRepo) FindAllPublic(_ context.Context, page, pageSize int) ([]model.AssetOwnership, int64, error) {
 	return nil, 0, nil
 }
 
-func (r *fakeOtcAssetOwnershipRepo) UpdateOTCFields(_ context.Context, ownershipID uint, publicAmount, reservedAmount float64) error	{
+func (r *fakeOtcAssetOwnershipRepo) UpdateOTCFields(_ context.Context, ownershipID uint, publicAmount, reservedAmount float64) error {
 	return nil
 }
-
 
 type fakeOtcStockRepo struct {
 	stocks []model.Stock
@@ -194,7 +198,7 @@ func (r *fakeOtcStockRepo) FindByAssetIDs(_ context.Context, ids []uint) ([]mode
 	}
 	var out []model.Stock
 	for _, s := range r.stocks {
-		if idSet[s.AssetID] || idSet[s.StockID] {
+		if idSet[s.AssetID] {
 			out = append(out, s)
 		}
 	}
@@ -206,8 +210,8 @@ func (r *fakeOtcStockRepo) FindByAssetIDs(_ context.Context, ids []uint) ([]mode
 const (
 	otcBuyerID  uint = 10
 	otcSellerID uint = 20
-	otcStockID  uint = 1
-	otcAssetID  uint = 100
+	otcAssetID  uint = 1
+	assetOwnershipID uint = 1
 )
 
 var otcFutureDate = time.Now().Add(30 * 24 * time.Hour)
@@ -233,7 +237,7 @@ func newOtcTestService(t *testing.T) (*OtcOfferService, *fakeOtcOfferRepo, *fake
 	ownershipRepo := newFakeOtcAssetOwnershipRepo()
 	stockRepo := &fakeOtcStockRepo{
 		stocks: []model.Stock{
-			{StockID: otcStockID, AssetID: otcAssetID},
+			{AssetID: otcAssetID},
 		},
 	}
 	banking := &fakeBankingClient{}
@@ -245,6 +249,7 @@ func newOtcTestService(t *testing.T) (*OtcOfferService, *fakeOtcOfferRepo, *fake
 		AssetID:      otcAssetID,
 		Amount:       100,
 		PublicAmount: 100,
+		Asset:        model.Asset { AssetType: model.AssetTypeStock },
 	})
 
 	svc := NewOtcOfferService(offerRepo, contractRepo, ownershipRepo, stockRepo, banking)
@@ -255,8 +260,7 @@ func otcCreateOffer(t *testing.T, svc *OtcOfferService, amount int) *model.OtcOf
 	t.Helper()
 	ctx := ctxForOtcUser(otcBuyerID)
 	offer, err := svc.CreateOffer(ctx, dto.CreateOtcOfferRequest{
-		SellerID:           otcSellerID,
-		StockID:            otcStockID,
+		AssetOwnershipID:   assetOwnershipID,
 		Amount:             amount,
 		PricePerStock:      50.0,
 		Premium:            5.0,
@@ -284,11 +288,10 @@ func TestOtcCreateOffer_Success(t *testing.T) {
 
 func TestOtcCreateOffer_SelfOffer_ReturnsError(t *testing.T) {
 	svc, _, _, _, _ := newOtcTestService(t)
-	ctx := ctxForOtcUser(otcBuyerID)
+	ctx := ctxForOtcUser(otcSellerID)
 
 	_, err := svc.CreateOffer(ctx, dto.CreateOtcOfferRequest{
-		SellerID:           otcBuyerID, // same as caller
-		StockID:            otcStockID,
+		AssetOwnershipID:   assetOwnershipID,
 		Amount:             10,
 		PricePerStock:      50,
 		Premium:            5,
@@ -305,8 +308,7 @@ func TestOtcCreateOffer_PastSettlementDate_ReturnsError(t *testing.T) {
 	ctx := ctxForOtcUser(otcBuyerID)
 
 	_, err := svc.CreateOffer(ctx, dto.CreateOtcOfferRequest{
-		SellerID:           otcSellerID,
-		StockID:            otcStockID,
+		AssetOwnershipID:   assetOwnershipID,
 		Amount:             10,
 		PricePerStock:      50,
 		Premium:            5,
@@ -323,8 +325,7 @@ func TestOtcCreateOffer_ExceedsSellerCapacity_ReturnsError(t *testing.T) {
 	ctx := ctxForOtcUser(otcBuyerID)
 
 	_, err := svc.CreateOffer(ctx, dto.CreateOtcOfferRequest{
-		SellerID:           otcSellerID,
-		StockID:            otcStockID,
+		AssetOwnershipID:   assetOwnershipID,
 		Amount:             200, // seller only has 100 public
 		PricePerStock:      50,
 		Premium:            5,
@@ -491,8 +492,7 @@ func TestOtcValidateSellerCapacity_MultipleConcurrentOffers(t *testing.T) {
 	// third offer requesting 20 should fail (50+40+20=110 > 100)
 	ctx := ctxForOtcUser(otcBuyerID)
 	_, err := svc.CreateOffer(ctx, dto.CreateOtcOfferRequest{
-		SellerID:           otcSellerID,
-		StockID:            otcStockID,
+		AssetOwnershipID:   assetOwnershipID,
 		Amount:             20,
 		PricePerStock:      50,
 		Premium:            5,

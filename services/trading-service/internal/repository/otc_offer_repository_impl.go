@@ -51,10 +51,10 @@ func (r *otcOfferRepositoryImpl) FindActiveForUser(ctx context.Context, userID u
 	return offers, err
 }
 
-func (r *otcOfferRepositoryImpl) FindActiveBySellerAndStock(ctx context.Context, sellerID, stockID uint, excludeOfferID *uint) ([]model.OtcOffer, error) {
+func (r *otcOfferRepositoryImpl) FindActiveBySellerAndStock(ctx context.Context, sellerID, stockAssetID uint, excludeOfferID *uint) ([]model.OtcOffer, error) {
 	var offers []model.OtcOffer
 	q := r.db.WithContext(ctx).
-		Where("seller_id = ? AND stock_id = ? AND status = ?", sellerID, stockID, model.OtcOfferStatusActive)
+		Where("seller_id = ? AND stock_asset_id = ? AND status = ?", sellerID, stockAssetID, model.OtcOfferStatusActive)
 	if excludeOfferID != nil {
 		q = q.Where("otc_offer_id <> ?", *excludeOfferID)
 	}

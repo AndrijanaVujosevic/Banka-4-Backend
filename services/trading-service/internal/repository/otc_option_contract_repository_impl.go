@@ -55,7 +55,7 @@ func (r *otcOptionContractRepositoryImpl) FindForUser(ctx context.Context, userI
 func (r *otcOptionContractRepositoryImpl) FindActiveBySellerAndStock(ctx context.Context, sellerID, stockID uint, now time.Time) ([]model.OtcOptionContract, error) {
 	var contracts []model.OtcOptionContract
 	err := r.db.WithContext(ctx).
-		Where("seller_id = ? AND stock_id = ? AND is_exercised = false AND settlement_date > ?", sellerID, stockID, now).
+		Where("seller_id = ? AND stock_asset_id = ? AND is_exercised = false AND settlement_date > ?", sellerID, stockID, now).
 		Find(&contracts).Error
 	return contracts, err
 }

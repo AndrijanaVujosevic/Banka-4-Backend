@@ -164,8 +164,8 @@ func SetupRoutes(r *gin.Engine, healthHandler *handler.HealthHandler, taxHandler
 		otc.Use(auth.Middleware(verifier, permProvider))
 		{
 			otc.GET("/public", otcHandler.GetPublicOTCAssets)
-      
-      // Stranica: Aktivne ponude — pregovori u kojima učestvuje ulogovani korisnik.
+
+			// Stranica: Aktivne ponude — pregovori u kojima učestvuje ulogovani korisnik.
 			otc.GET("/offers/active", otcOfferHandler.GetMyActiveOffers)
 
 			// Stranica: Sklopljeni ugovori — opcioni ugovori (CALL) sklopljeni iz prihvaćenih ponuda.

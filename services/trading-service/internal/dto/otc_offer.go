@@ -8,8 +8,7 @@ import (
 
 // CreateOtcOfferRequest — kupac inicira pregovor.
 type CreateOtcOfferRequest struct {
-	SellerID           uint      `json:"seller_id" binding:"required"`
-	StockID            uint      `json:"stock_id" binding:"required"`
+	AssetOwnershipID   uint      `json:"asset_ownership_id" binding:"required"`
 	Amount             int       `json:"amount" binding:"required,gt=0"`
 	PricePerStock      float64   `json:"price_per_stock" binding:"required,gt=0"`
 	Premium            float64   `json:"premium" binding:"required,gt=0"`
@@ -46,7 +45,7 @@ type OtcOfferResponse struct {
 	OtcOfferID          uint                 `json:"otc_offer_id"`
 	BuyerID             uint                 `json:"buyer_id"`
 	SellerID            uint                 `json:"seller_id"`
-	StockID             uint                 `json:"stock_id"`
+	StockAssetID        uint                 `json:"stock_asset_id"`
 	Ticker              string               `json:"ticker,omitempty"`
 	StockName           string               `json:"stock_name,omitempty"`
 	Amount              int                  `json:"amount"`
@@ -68,7 +67,7 @@ type OtcOptionContractResponse struct {
 	OtcOfferID          uint       `json:"otc_offer_id"`
 	BuyerID             uint       `json:"buyer_id"`
 	SellerID            uint       `json:"seller_id"`
-	StockID             uint       `json:"stock_id"`
+	StockAssetID        uint       `json:"stock_asset_id"`
 	Ticker              string     `json:"ticker,omitempty"`
 	StockName           string     `json:"stock_name,omitempty"`
 	Amount              int        `json:"amount"`
@@ -85,7 +84,7 @@ func ToOtcOfferResponse(o model.OtcOffer) OtcOfferResponse {
 		OtcOfferID:          o.OtcOfferID,
 		BuyerID:             o.BuyerID,
 		SellerID:            o.SellerID,
-		StockID:             o.StockID,
+		StockAssetID:        o.StockAssetID,
 		Amount:              o.Amount,
 		PricePerStock:       o.PricePerStock,
 		Premium:             o.Premium,
@@ -120,7 +119,7 @@ func ToOtcOptionContractResponse(c model.OtcOptionContract) OtcOptionContractRes
 		OtcOfferID:          c.OtcOfferID,
 		BuyerID:             c.BuyerID,
 		SellerID:            c.SellerID,
-		StockID:             c.StockID,
+		StockAssetID:        c.StockAssetID,
 		Amount:              c.Amount,
 		StrikePrice:         c.StrikePrice,
 		Premium:             c.Premium,

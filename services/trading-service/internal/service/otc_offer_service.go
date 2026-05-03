@@ -68,14 +68,31 @@ func (s *OtcOfferService) CreateOffer(ctx context.Context, req dto.CreateOtcOffe
 		return nil, err
 	}
 
-	if buyerID == req.SellerID {
+	assetOwnership, err := s.assetOwnershipRepo.FindByID(ctx, req.AssetOwnershipID)
+	if assetOwnership == nil {
+		return nil, errors.BadRequestErr("invalid asset ownership id")
+	}
+	if err != nil {
+		return nil, err
+	}
+	
+	if assetOwnership.OwnerType != model.OwnerTypeClient {
+		return nil, errors.BadRequestErr("the provided asset does not belong to a client")
+	}
+
+	if assetOwnership.Asset.AssetType != model.AssetTypeStock {
+		return nil, errors.BadRequestErr("the asset is not a stock")
+	}
+
+	if buyerID == assetOwnership.UserId {
 		return nil, errors.BadRequestErr("cannot send an offer to yourself")
 	}
+
 	if req.SettlementDate.Before(s.now()) {
 		return nil, errors.BadRequestErr("settlement date must be in the future")
 	}
 
-	if err := s.validateSellerCapacity(ctx, req.SellerID, req.StockID, req.Amount, nil); err != nil {
+	if err := s.validateSellerCapacity(ctx, assetOwnership.UserId, assetOwnership.AssetID, req.Amount, nil); err != nil {
 		return nil, err
 	}
 
@@ -86,8 +103,8 @@ func (s *OtcOfferService) CreateOffer(ctx context.Context, req dto.CreateOtcOffe
 	now := s.now()
 	offer := &model.OtcOffer{
 		BuyerID:            buyerID,
-		SellerID:           req.SellerID,
-		StockID:            req.StockID,
+		SellerID:           assetOwnership.UserId,
+		StockAssetID:       assetOwnership.AssetID,
 		Amount:             req.Amount,
 		PricePerStock:      req.PricePerStock,
 		Premium:            req.Premium,
@@ -141,7 +158,7 @@ func (s *OtcOfferService) SendCounterOffer(ctx context.Context, offerID uint, re
 	}
 
 	if callerID == offer.SellerID {
-		if err := s.validateSellerCapacity(ctx, offer.SellerID, offer.StockID, req.Amount, &offer.OtcOfferID); err != nil {
+		if err := s.validateSellerCapacity(ctx, offer.SellerID, offer.StockAssetID, req.Amount, &offer.OtcOfferID); err != nil {
 			return nil, err
 		}
 	}
@@ -217,7 +234,7 @@ func (s *OtcOfferService) AcceptOffer(ctx context.Context, offerID uint, req dto
 		return nil, errors.BadRequestErr("seller account number is missing — the seller must send a counter-offer or accept first")
 	}
 
-	if err := s.validateSellerCapacity(ctx, offer.SellerID, offer.StockID, offer.Amount, &offer.OtcOfferID); err != nil {
+	if err := s.validateSellerCapacity(ctx, offer.SellerID, offer.StockAssetID, offer.Amount, &offer.OtcOfferID); err != nil {
 		return nil, err
 	}
 
@@ -239,7 +256,7 @@ func (s *OtcOfferService) AcceptOffer(ctx context.Context, offerID uint, req dto
 		OtcOfferID:     offer.OtcOfferID,
 		BuyerID:        offer.BuyerID,
 		SellerID:       offer.SellerID,
-		StockID:        offer.StockID,
+		StockAssetID:   offer.StockAssetID,
 		Amount:         offer.Amount,
 		StrikePrice:    offer.PricePerStock,
 		Premium:        offer.Premium,
@@ -250,9 +267,9 @@ func (s *OtcOfferService) AcceptOffer(ctx context.Context, offerID uint, req dto
 	}
 
 	// 3) Increase the seller's reserved_amount by the contracted quantity.
-	stocks, _ := s.stockRepo.FindByAssetIDs(ctx, []uint{offer.StockID})
+	stocks, _ := s.stockRepo.FindByAssetIDs(ctx, []uint{offer.StockAssetID})
 	for i := range stocks {
-		if stocks[i].StockID == offer.StockID || stocks[i].AssetID == offer.StockID {
+		if stocks[i].AssetID == offer.StockAssetID {
 			_ = s.assetOwnershipRepo.IncreaseReservedAmount(
 				ctx, offer.SellerID, model.OwnerTypeClient, stocks[i].AssetID, float64(offer.Amount),
 			)
@@ -358,7 +375,7 @@ func (s *OtcOfferService) validateSellerCapacity(
 	}
 	var stock *model.Stock
 	for i := range stocks {
-		if stocks[i].StockID == stockID || stocks[i].AssetID == stockID {
+		if stocks[i].AssetID == stockID {
 			stock = &stocks[i]
 			break
 		}

@@ -30,8 +30,8 @@ type OtcOffer struct {
 	SellerID uint `gorm:"not null;index"`
 
 	// Stock (akcije) — spec: trguju se SAMO akcije.
-	StockID uint `gorm:"not null;index"`
-	Stock   Stock
+	StockAssetID uint `gorm:"not null`
+	Stock        Stock `gorm:"foreignKey:StockAssetID;references:AssetID"`
 
 	// Pregovarani parametri — menjaju se po kontraponudi.
 	Amount         int       `gorm:"not null"`

@@ -25,16 +25,15 @@ func seedAssetAndStock(t *testing.T, db *gorm.DB, ticker string) (*model.Asset, 
 	listing := seedListing(t, db, ticker, ex.MicCode, model.AssetTypeStock, 100.0)
 	asset := &model.Asset{}
 	require.NoError(t, db.First(asset, listing.AssetID).Error)
-	// Insert Stock with StockID forced equal to AssetID so that the service's
-	// FindByAssetIDs([]uint{stockID}) lookup (WHERE asset_id = stockID) succeeds
-	// when the caller passes stock.StockID as the offer's stock_id field, and the
-	// FK constraint fk_otc_offers_stock (references stocks.stock_id) is satisfied.
+	// Insert Stock with StockAssetID forced equal to AssetID so that the service's
+	// FindByAssetIDs([]uint{stockAssetID}) lookup (WHERE asset_id = stockAssetID) succeeds
+	// and the FK constraint fk_otc_offers_stock (references stocks.asset_id) is satisfied.
 	stock := &model.Stock{
 		AssetID:           asset.AssetID,
 		OutstandingShares: 1_000_000,
 		DividendYield:     2.5,
 	}
-	stock.StockID = asset.AssetID
+	stock.AssetID = asset.AssetID
 	require.NoError(t, db.Create(stock).Error)
 	return asset, stock
 }
@@ -96,12 +95,12 @@ func TestOTC_CreateOffer_Success(t *testing.T) {
 	db := setupTestDB(t)
 	router, _ := setupTestRouter(t, db)
 
-	asset, stock := seedAssetAndStock(t, db, uniqueValue(t, "CRTO"))
-	seedOwnership(t, db, 20, asset.AssetID, 100, 100)
+	asset, _ := seedAssetAndStock(t, db, uniqueValue(t, "CRTO"))
+	ownership := seedAssetOwnership(t, db, 20, model.OwnerTypeClient, asset.AssetID, 100)
+	setPublicAmount(t, db, ownership.AssetOwnershipID, 100, 0)
 
 	body := map[string]any{
-		"seller_id":            20,
-		"stock_id":             stock.StockID,
+		"asset_ownership_id":   ownership.AssetOwnershipID,
 		"amount":               10,
 		"price_per_stock":      50.0,
 		"premium":              5.0,
@@ -124,12 +123,12 @@ func TestOTC_CreateOffer_SelfOffer_BadRequest(t *testing.T) {
 	db := setupTestDB(t)
 	router, _ := setupTestRouter(t, db)
 
-	asset, stock := seedAssetAndStock(t, db, uniqueValue(t, "SELF"))
-	seedOwnership(t, db, 10, asset.AssetID, 100, 100)
+	asset, _ := seedAssetAndStock(t, db, uniqueValue(t, "SELF"))
+	ownership := seedAssetOwnership(t, db, 10, model.OwnerTypeClient, asset.AssetID, 100)
+	setPublicAmount(t, db, ownership.AssetOwnershipID, 100, 0)
 
 	body := map[string]any{
-		"seller_id":            10,
-		"stock_id":             stock.StockID,
+		"asset_ownership_id":   ownership.AssetOwnershipID,
 		"amount":               5,
 		"price_per_stock":      50.0,
 		"premium":              5.0,
@@ -147,7 +146,7 @@ func TestOTC_CreateOffer_Unauthorized(t *testing.T) {
 	router, _ := setupTestRouter(t, db)
 
 	body := map[string]any{
-		"seller_id": 20, "stock_id": 1, "amount": 5,
+		"asset_ownership_id": 1, "amount": 5,
 		"price_per_stock": 50.0, "premium": 5.0,
 		"settlement_date":      time.Now().Add(time.Hour * 24).Format(time.RFC3339),
 		"buyer_account_number": "acc",
@@ -161,12 +160,15 @@ func TestOTC_SendCounterOffer_Success(t *testing.T) {
 	db := setupTestDB(t)
 	router, _ := setupTestRouter(t, db)
 
-	asset, stock := seedAssetAndStock(t, db, uniqueValue(t, "CNTR"))
-	seedOwnership(t, db, 20, asset.AssetID, 100, 100)
+	asset, _ := seedAssetAndStock(t, db, uniqueValue(t, "CNTR"))
+	ownership := seedAssetOwnership(t, db, 20, model.OwnerTypeClient, asset.AssetID, 100)
+	setPublicAmount(t, db, ownership.AssetOwnershipID, 100, 0)
 
 	offerBody := map[string]any{
-		"seller_id": 20, "stock_id": stock.StockID, "amount": 10,
-		"price_per_stock": 50.0, "premium": 5.0,
+		"asset_ownership_id":   ownership.AssetOwnershipID,
+		"amount":               10,
+		"price_per_stock":      50.0,
+		"premium":              5.0,
 		"settlement_date":      time.Now().Add(30 * 24 * time.Hour).Format(time.RFC3339),
 		"buyer_account_number": "buyer-acc",
 	}
@@ -194,12 +196,15 @@ func TestOTC_SendCounterOffer_SameUserTwice_BadRequest(t *testing.T) {
 	db := setupTestDB(t)
 	router, _ := setupTestRouter(t, db)
 
-	asset, stock := seedAssetAndStock(t, db, uniqueValue(t, "DBL"))
-	seedOwnership(t, db, 20, asset.AssetID, 100, 100)
+	asset, _ := seedAssetAndStock(t, db, uniqueValue(t, "DBL"))
+	ownership := seedAssetOwnership(t, db, 20, model.OwnerTypeClient, asset.AssetID, 100)
+	setPublicAmount(t, db, ownership.AssetOwnershipID, 100, 0)
 
 	offerBody := map[string]any{
-		"seller_id": 20, "stock_id": stock.StockID, "amount": 10,
-		"price_per_stock": 50.0, "premium": 5.0,
+		"asset_ownership_id":   ownership.AssetOwnershipID,
+		"amount":               10,
+		"price_per_stock":      50.0,
+		"premium":              5.0,
 		"settlement_date":      time.Now().Add(30 * 24 * time.Hour).Format(time.RFC3339),
 		"buyer_account_number": "buyer-acc",
 	}
@@ -221,12 +226,15 @@ func TestOTC_AcceptOffer_Success_CreatesContract(t *testing.T) {
 	db := setupTestDB(t)
 	router, _ := setupTestRouter(t, db)
 
-	asset, stock := seedAssetAndStock(t, db, uniqueValue(t, "ACPT"))
-	seedOwnership(t, db, 20, asset.AssetID, 100, 100)
+	asset, _ := seedAssetAndStock(t, db, uniqueValue(t, "ACPT"))
+	ownership := seedAssetOwnership(t, db, 20, model.OwnerTypeClient, asset.AssetID, 100)
+	setPublicAmount(t, db, ownership.AssetOwnershipID, 100, 0)
 
 	offerBody := map[string]any{
-		"seller_id": 20, "stock_id": stock.StockID, "amount": 10,
-		"price_per_stock": 50.0, "premium": 5.0,
+		"asset_ownership_id":   ownership.AssetOwnershipID,
+		"amount":               10,
+		"price_per_stock":      50.0,
+		"premium":              5.0,
 		"settlement_date":      time.Now().Add(30 * 24 * time.Hour).Format(time.RFC3339),
 		"buyer_account_number": "buyer-acc",
 	}
@@ -244,11 +252,11 @@ func TestOTC_AcceptOffer_Success_CreatesContract(t *testing.T) {
 	assert.Equal(t, float64(10), contract["amount"])
 	assert.Equal(t, float64(50.0), contract["strike_price"])
 
-	var ownership model.AssetOwnership
+	var updatedOwnership model.AssetOwnership
 	err := db.Where("user_id = ? AND owner_type = ? AND asset_id = ?", 20, model.OwnerTypeClient, asset.AssetID).
-		First(&ownership).Error
+		First(&updatedOwnership).Error
 	require.NoError(t, err)
-	assert.Equal(t, float64(10), ownership.ReservedAmount)
+	assert.Equal(t, float64(10), updatedOwnership.ReservedAmount)
 }
 
 func TestOTC_AcceptOffer_BuyerCannotAcceptOwnOffer(t *testing.T) {
@@ -256,12 +264,15 @@ func TestOTC_AcceptOffer_BuyerCannotAcceptOwnOffer(t *testing.T) {
 	db := setupTestDB(t)
 	router, _ := setupTestRouter(t, db)
 
-	asset, stock := seedAssetAndStock(t, db, uniqueValue(t, "SELF2"))
-	seedOwnership(t, db, 20, asset.AssetID, 100, 100)
+	asset, _ := seedAssetAndStock(t, db, uniqueValue(t, "SELF2"))
+	ownership := seedAssetOwnership(t, db, 20, model.OwnerTypeClient, asset.AssetID, 100)
+	setPublicAmount(t, db, ownership.AssetOwnershipID, 100, 0)
 
 	offerBody := map[string]any{
-		"seller_id": 20, "stock_id": stock.StockID, "amount": 10,
-		"price_per_stock": 50.0, "premium": 5.0,
+		"asset_ownership_id":   ownership.AssetOwnershipID,
+		"amount":               10,
+		"price_per_stock":      50.0,
+		"premium":              5.0,
 		"settlement_date":      time.Now().Add(30 * 24 * time.Hour).Format(time.RFC3339),
 		"buyer_account_number": "buyer-acc",
 	}
@@ -279,12 +290,15 @@ func TestOTC_RejectOffer_Success(t *testing.T) {
 	db := setupTestDB(t)
 	router, _ := setupTestRouter(t, db)
 
-	asset, stock := seedAssetAndStock(t, db, uniqueValue(t, "REJ"))
-	seedOwnership(t, db, 20, asset.AssetID, 100, 100)
+	asset, _ := seedAssetAndStock(t, db, uniqueValue(t, "REJ"))
+	ownership := seedAssetOwnership(t, db, 20, model.OwnerTypeClient, asset.AssetID, 100)
+	setPublicAmount(t, db, ownership.AssetOwnershipID, 100, 0)
 
 	offerBody := map[string]any{
-		"seller_id": 20, "stock_id": stock.StockID, "amount": 10,
-		"price_per_stock": 50.0, "premium": 5.0,
+		"asset_ownership_id":   ownership.AssetOwnershipID,
+		"amount":               10,
+		"price_per_stock":      50.0,
+		"premium":              5.0,
 		"settlement_date":      time.Now().Add(30 * 24 * time.Hour).Format(time.RFC3339),
 		"buyer_account_number": "buyer-acc",
 	}
@@ -305,13 +319,16 @@ func TestOTC_GetMyActiveOffers_ReturnsOnlyOwnOffers(t *testing.T) {
 	db := setupTestDB(t)
 	router, _ := setupTestRouter(t, db)
 
-	asset, stock := seedAssetAndStock(t, db, uniqueValue(t, "ACTIVE"))
-	seedOwnership(t, db, 20, asset.AssetID, 100, 100)
+	asset, _ := seedAssetAndStock(t, db, uniqueValue(t, "ACTIVE"))
+	ownership := seedAssetOwnership(t, db, 20, model.OwnerTypeClient, asset.AssetID, 100)
+	setPublicAmount(t, db, ownership.AssetOwnershipID, 100, 0)
 
 	for i := 0; i < 2; i++ {
 		body := map[string]any{
-			"seller_id": 20, "stock_id": stock.StockID, "amount": 5,
-			"price_per_stock": 50.0, "premium": 5.0,
+			"asset_ownership_id":   ownership.AssetOwnershipID,
+			"amount":               5,
+			"price_per_stock":      50.0,
+			"premium":              5.0,
 			"settlement_date":      time.Now().Add(30 * 24 * time.Hour).Format(time.RFC3339),
 			"buyer_account_number": "buyer-acc",
 		}
@@ -335,12 +352,15 @@ func TestOTC_GetMyOptionContracts_AfterAccept(t *testing.T) {
 	db := setupTestDB(t)
 	router, _ := setupTestRouter(t, db)
 
-	asset, stock := seedAssetAndStock(t, db, uniqueValue(t, "CTCT"))
-	seedOwnership(t, db, 20, asset.AssetID, 100, 100)
+	asset, _ := seedAssetAndStock(t, db, uniqueValue(t, "CTCT"))
+	ownership := seedAssetOwnership(t, db, 20, model.OwnerTypeClient, asset.AssetID, 100)
+	setPublicAmount(t, db, ownership.AssetOwnershipID, 100, 0)
 
 	offerBody := map[string]any{
-		"seller_id": 20, "stock_id": stock.StockID, "amount": 10,
-		"price_per_stock": 50.0, "premium": 5.0,
+		"asset_ownership_id":   ownership.AssetOwnershipID,
+		"amount":               10,
+		"price_per_stock":      50.0,
+		"premium":              5.0,
 		"settlement_date":      time.Now().Add(30 * 24 * time.Hour).Format(time.RFC3339),
 		"buyer_account_number": "buyer-acc",
 	}
