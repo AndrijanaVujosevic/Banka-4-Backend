@@ -187,7 +187,7 @@ func TestCommitMovesBalancesExactlyOnce(t *testing.T) {
 	require.Equal(t, 550.0, accountRepo.accounts["SELLER"].Balance)
 	require.Equal(t, 550.0, accountRepo.accounts["SELLER"].AvailableBalance)
 
-	reservation, err = svc.Commit(context.Background(), "exec-3")
+	_, err = svc.Commit(context.Background(), "exec-3")
 	require.NoError(t, err)
 	require.Equal(t, 700.0, accountRepo.accounts["BUYER"].Balance)
 	require.Equal(t, 550.0, accountRepo.accounts["SELLER"].Balance)
