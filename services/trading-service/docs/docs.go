@@ -3820,6 +3820,9 @@ const docTemplate = `{
                 "created_at": {
                     "type": "string"
                 },
+                "current_price": {
+                    "type": "number"
+                },
                 "exercised_at": {
                     "type": "string"
                 },
@@ -3952,6 +3955,9 @@ const docTemplate = `{
                 },
                 "option_data": {
                     "$ref": "#/definitions/dto.OptionSpecificAssetData"
+                },
+                "ownership_id": {
+                    "type": "integer"
                 },
                 "price_per_unit_rsd": {
                     "type": "number"
