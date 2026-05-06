@@ -2,8 +2,10 @@ package service
 
 import (
 	stdErrors "errors"
+	"fmt"
 
 	"context"
+
 	"github.com/RAF-SI-2025/Banka-4-Backend/common/pkg/errors"
 	"github.com/RAF-SI-2025/Banka-4-Backend/services/user-service/internal/client"
 	"github.com/RAF-SI-2025/Banka-4-Backend/services/user-service/internal/dto"
@@ -101,6 +103,12 @@ func (s *ActuaryService) UpdateActuarySettings(ctx context.Context, employeeID u
 
 	// Ako je bio supervisor a sad vise nije, prebaci fondove na admina koji je oduzeo pravo
 	nowSupervisor := employee.IsSupervisor()
+	fmt.Printf("DEBUG: wasSupervisor=%v, nowSupervisor=%v, req.IsSupervisor=%v\n", wasSupervisor, nowSupervisor, req.IsSupervisor)
+
+	// Ako je req.IsSupervisor pointer, koristi ovo:
+	if req.IsSupervisor != nil {
+		fmt.Printf("DEBUG: req pointer value=%v\n", *req.IsSupervisor)
+	}
 	if wasSupervisor && !nowSupervisor {
 		if _, err := s.tradingClient.TransferFunds(ctx, employeeID, callerID); err != nil {
 			return nil, errors.InternalErr(err)
