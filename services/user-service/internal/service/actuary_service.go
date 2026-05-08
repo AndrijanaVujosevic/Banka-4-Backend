@@ -59,7 +59,7 @@ func (s *ActuaryService) UpdateActuarySettings(ctx context.Context, employeeID u
 
 	wasSupervisor := employee.IsSupervisor()
 
-	if req.IsAgent != nil || req.IsSupervisor != nil {
+	if req.IsAgent != nil || req.IsSupervisor != nil || req.Limit != nil || req.NeedApproval != nil {
 		actuary := employee.ActuaryInfo
 		if actuary == nil {
 			return nil, errors.BadRequestErr("employee has no actuary info")
@@ -71,24 +71,16 @@ func (s *ActuaryService) UpdateActuarySettings(ctx context.Context, employeeID u
 		if req.IsSupervisor != nil {
 			actuary.IsSupervisor = *req.IsSupervisor
 		}
-
-		if err := s.actuaryRepo.Save(ctx, actuary); err != nil {
-			return nil, errors.InternalErr(err)
-		}
-		employee.ActuaryInfo = actuary
-	}
-
-	if req.Limit != nil || req.NeedApproval != nil {
-		if !employee.IsAgent() {
-			return nil, errors.BadRequestErr("only agents have configurable limits")
-		}
-
-		actuary := employee.ActuaryInfo
-		if req.Limit != nil {
-			actuary.Limit = *req.Limit
-		}
-		if req.NeedApproval != nil {
-			actuary.NeedApproval = *req.NeedApproval
+		if req.Limit != nil || req.NeedApproval != nil {
+			if !employee.IsAgent() {
+				return nil, errors.BadRequestErr("only agents have configurable limits")
+			}
+			if req.Limit != nil {
+				actuary.Limit = *req.Limit
+			}
+			if req.NeedApproval != nil {
+				actuary.NeedApproval = *req.NeedApproval
+			}
 		}
 
 		if err := s.actuaryRepo.Save(ctx, actuary); err != nil {
@@ -97,9 +89,7 @@ func (s *ActuaryService) UpdateActuarySettings(ctx context.Context, employeeID u
 		employee.ActuaryInfo = actuary
 	}
 
-	nowSupervisor := employee.IsSupervisor()
-
-	if wasSupervisor && !nowSupervisor {
+	if wasSupervisor && !employee.IsSupervisor() {
 		if _, err := s.tradingClient.TransferFunds(ctx, employeeID, callerID); err != nil {
 			return nil, errors.InternalErr(err)
 		}
