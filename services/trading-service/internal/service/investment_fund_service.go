@@ -949,6 +949,14 @@ func (s *InvestmentFundService) GetFundDetail(ctx context.Context, fundID uint) 
 	}, nil
 }
 
+func (s *InvestmentFundService) TransferFunds(ctx context.Context, fromManagerID uint, toManagerID uint) (int, error) {
+	count, err := s.fundRepo.UpdateManagerID(ctx, fromManagerID, toManagerID)
+	if err != nil {
+		return 0, commonErrors.InternalErr(err)
+	}
+	return int(count), nil
+}
+
 func (s *InvestmentFundService) CalculateAndSaveDailyHistory(ctx context.Context) error {
 	funds, err := s.fundRepo.GetAllInvestmentFunds(ctx)
 	if err != nil {

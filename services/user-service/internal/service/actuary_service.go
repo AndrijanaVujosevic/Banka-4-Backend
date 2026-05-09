@@ -5,23 +5,29 @@ import (
 	stdErrors "errors"
 
 	"github.com/RAF-SI-2025/Banka-4-Backend/common/pkg/errors"
+	"github.com/RAF-SI-2025/Banka-4-Backend/services/user-service/internal/client"
 	"github.com/RAF-SI-2025/Banka-4-Backend/services/user-service/internal/dto"
 	"github.com/RAF-SI-2025/Banka-4-Backend/services/user-service/internal/repository"
 	"gorm.io/gorm"
 )
 
 type ActuaryService struct {
-	actuaryRepo  repository.ActuaryRepository
-	employeeRepo repository.EmployeeRepository
+	actuaryRepo   repository.ActuaryRepository
+	employeeRepo  repository.EmployeeRepository
+	tradingClient client.TradingClient
 }
 
-func NewActuaryService(actuaryRepo repository.ActuaryRepository, employeeRepo repository.EmployeeRepository) *ActuaryService {
+func NewActuaryService(
+	actuaryRepo repository.ActuaryRepository,
+	employeeRepo repository.EmployeeRepository,
+	tradingClient client.TradingClient,
+) *ActuaryService {
 	return &ActuaryService{
-		actuaryRepo:  actuaryRepo,
-		employeeRepo: employeeRepo,
+		actuaryRepo:   actuaryRepo,
+		employeeRepo:  employeeRepo,
+		tradingClient: tradingClient,
 	}
 }
-
 func (s *ActuaryService) GetAllActuaries(ctx context.Context, query *dto.ListActuariesQuery) (*dto.ListActuariesResponse, error) {
 	employees, total, err := s.actuaryRepo.GetAll(
 		ctx,
@@ -39,11 +45,10 @@ func (s *ActuaryService) GetAllActuaries(ctx context.Context, query *dto.ListAct
 	if err != nil {
 		return nil, errors.InternalErr(err)
 	}
-
 	return dto.ToActuaryResponseList(employees, total, query.Page, query.PageSize), nil
 }
 
-func (s *ActuaryService) UpdateActuarySettings(ctx context.Context, employeeID uint, req *dto.UpdateActuarySettingsRequest) (*dto.ActuaryResponse, error) {
+func (s *ActuaryService) UpdateActuarySettings(ctx context.Context, employeeID uint, callerID uint, req *dto.UpdateActuarySettingsRequest) (*dto.ActuaryResponse, error) {
 	employee, err := s.employeeRepo.FindByID(ctx, employeeID)
 	if err != nil {
 		return nil, errors.InternalErr(err)
@@ -51,23 +56,45 @@ func (s *ActuaryService) UpdateActuarySettings(ctx context.Context, employeeID u
 	if employee == nil {
 		return nil, errors.NotFoundErr("employee not found")
 	}
-	if !employee.IsAgent() {
-		return nil, errors.BadRequestErr("only agents have configurable limits")
-	}
+
+	wasSupervisor := employee.IsSupervisor()
 
 	actuary := employee.ActuaryInfo
+
+	if req.Limit != nil || req.NeedApproval != nil {
+		if !employee.IsAgent() {
+			return nil, errors.BadRequestErr("only agents have configurable limits")
+		}
+	}
+
+	if actuary == nil {
+		return nil, errors.BadRequestErr("employee has no actuary info")
+	}
+
 	if req.Limit != nil {
 		actuary.Limit = *req.Limit
 	}
 	if req.NeedApproval != nil {
 		actuary.NeedApproval = *req.NeedApproval
 	}
+	if req.IsAgent != nil {
+		actuary.IsAgent = *req.IsAgent
+	}
+	if req.IsSupervisor != nil {
+		actuary.IsSupervisor = *req.IsSupervisor
+	}
 
 	if err := s.actuaryRepo.Save(ctx, actuary); err != nil {
 		return nil, errors.InternalErr(err)
 	}
-
 	employee.ActuaryInfo = actuary
+
+	if wasSupervisor && !employee.IsSupervisor() {
+		if _, err := s.tradingClient.TransferFunds(ctx, employeeID, callerID); err != nil {
+			return nil, errors.InternalErr(err)
+		}
+	}
+
 	return dto.ToActuaryResponse(employee), nil
 }
 
