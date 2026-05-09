@@ -37,7 +37,7 @@ type fakeFundRepo struct {
 
 	updateManagerIDResult int64
 	updateManagerIDErr    error
-  
+
 	savedPerformances []*model.FundPerformance
 }
 

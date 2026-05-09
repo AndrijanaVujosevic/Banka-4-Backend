@@ -51,6 +51,9 @@ func (f *fakeFundRepoForJob) SavePerformanceSnapshot(ctx context.Context, perf *
 	f.savedPerformances = append(f.savedPerformances, perf)
 	return nil
 }
+func (f *fakeFundRepoForJob) UpdateManagerID(ctx context.Context, fromManagerID uint, toManagerID uint) (int64, error) {
+	return 0, nil
+}
 
 type dummyBankingClient struct {
 	client.BankingClient
