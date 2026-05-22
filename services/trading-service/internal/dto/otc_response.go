@@ -16,4 +16,5 @@ type OTCAssetResponse struct {
 	AvailableAmount  float64         `json:"available_amount"`
 	UpdatedAt        time.Time       `json:"updated_at"`
 	OwnerName        string          `json:"owner_name"`
+	OwnerType        model.OwnerType `json:"owner_type"`
 }
