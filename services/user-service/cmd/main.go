@@ -6,7 +6,7 @@ import (
 	"go.uber.org/fx"
 	"gorm.io/gorm"
 
-	"github.com/RAF-SI-2025/Banka-4-Backend/common/pkg/audit"
+	"github.com/RAF-SI-2025/Banka-4-Backend/services/user-service/internal/audit"
 	"github.com/RAF-SI-2025/Banka-4-Backend/common/pkg/auth"
 	"github.com/RAF-SI-2025/Banka-4-Backend/common/pkg/db"
 	"github.com/RAF-SI-2025/Banka-4-Backend/common/pkg/jwt"

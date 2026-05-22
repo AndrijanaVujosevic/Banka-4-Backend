@@ -3,7 +3,7 @@ package dto
 import (
 	"time"
 
-	"github.com/RAF-SI-2025/Banka-4-Backend/common/pkg/audit"
+	"github.com/RAF-SI-2025/Banka-4-Backend/services/user-service/internal/audit"
 )
 
 type ListAuditLogsQuery struct {

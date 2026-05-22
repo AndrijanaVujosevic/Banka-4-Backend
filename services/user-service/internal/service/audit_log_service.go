@@ -3,7 +3,7 @@ package service
 import (
 	"context"
 
-	"github.com/RAF-SI-2025/Banka-4-Backend/common/pkg/audit"
+	"github.com/RAF-SI-2025/Banka-4-Backend/services/user-service/internal/audit"
 	"github.com/RAF-SI-2025/Banka-4-Backend/common/pkg/errors"
 	"github.com/RAF-SI-2025/Banka-4-Backend/services/user-service/internal/dto"
 )
