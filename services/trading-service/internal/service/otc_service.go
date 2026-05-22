@@ -116,6 +116,7 @@ func (s *OTCService) GetPublicOTCAssets(ctx context.Context, page, pageSize int)
 			}
 		}
 		resp.OwnerName = ownerName
+		resp.OwnerType = o.OwnerType
 
 		responses = append(responses, resp)
 	}
