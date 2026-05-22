@@ -77,6 +77,7 @@ func TestMain(m *testing.M) {
 		&model.RefreshToken{},
 		&model.EmployeePermission{},
 		&model.ClientPermission{},
+		&audit.AuditLog{},
 	); err != nil {
 		log.Fatalf("auto migrate test schema: %v", err)
 	}
