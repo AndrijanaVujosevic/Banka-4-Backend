@@ -74,6 +74,30 @@ func NewInvestmentFundService(
 }
 
 const pendingRedemptionBatchSize = 25
+const defaultFundNAV = 1.0
+const floatTolerance = 1e-9
+
+func unitsFromPosition(position model.ClientFundPosition) float64 {
+	if position.UnitsOwned > 0 {
+		return position.UnitsOwned
+	}
+	// Backward compatibility for legacy rows created before units support.
+	if position.TotalInvestedAmount > 0 {
+		return position.TotalInvestedAmount
+	}
+	return 0
+}
+
+func calculateFundNAV(fundTotalValue, totalUnits float64) float64 {
+	if totalUnits <= 0 {
+		return defaultFundNAV
+	}
+	nav := fundTotalValue / totalUnits
+	if nav <= 0 || math.IsNaN(nav) || math.IsInf(nav, 0) {
+		return defaultFundNAV
+	}
+	return nav
+}
 
 func (s *InvestmentFundService) sumSecuritiesValue(ctx context.Context, fundID uint) (float64, error) {
 	ownerships, err := s.ownershipRepo.FindByUserId(ctx, fundID, model.OwnerTypeFund)
@@ -170,24 +194,31 @@ func (s *InvestmentFundService) GetBankFundPositions(ctx context.Context) ([]dto
 			return nil, commonErrors.InternalErr(err)
 		}
 
-		var totalInvested float64
+		fundTotalValue := liquidAssets + secVal
+
+		var totalUnits float64
+		var bankUnits float64
 		var bankInvested float64
 		for _, pos := range fund.Positions {
-			totalInvested += pos.TotalInvestedAmount
+			units := unitsFromPosition(pos)
+			totalUnits += units
 
 			if pos.OwnerType == model.OwnerTypeActuary {
+				bankUnits += units
 				bankInvested += pos.TotalInvestedAmount
 			}
 		}
 
+		nav := calculateFundNAV(fundTotalValue, totalUnits)
+
 		var bankPct float64
-		if totalInvested > 0 {
-			bankPct = (bankInvested / totalInvested) * 100
+		if totalUnits > 0 {
+			bankPct = (bankUnits / totalUnits) * 100
 		} else {
 			bankPct = 0
 		}
 
-		bankValue := bankPct / 100.0 * (liquidAssets + secVal)
+		bankValue := bankUnits * nav
 		profit := bankValue - bankInvested
 
 		managerName := ""
@@ -330,6 +361,15 @@ func (s *InvestmentFundService) InvestInFund(ctx context.Context, fundID uint, r
 		)
 	}
 
+	nav, err := s.getFundNAV(ctx, fund.FundID, fund.AccountNumber)
+	if err != nil {
+		return nil, err
+	}
+	unitsBought := amountInRSD / nav
+	if unitsBought <= 0 || math.IsNaN(unitsBought) || math.IsInf(unitsBought, 0) {
+		return nil, commonErrors.BadRequestErr("unable to calculate purchased fund units")
+	}
+
 	commissionExempt := authCtx.IdentityType == auth.IdentityEmployee
 
 	_, err = s.bankingClient.CreatePaymentWithoutVerification(ctx, &pb.CreatePaymentRequest{
@@ -370,10 +410,12 @@ func (s *InvestmentFundService) InvestInFund(ctx context.Context, fundID uint, r
 			ClientID:            callerID,
 			OwnerType:           ownerType,
 			FundID:              fundID,
+			UnitsOwned:          unitsBought,
 			TotalInvestedAmount: amountInRSD,
 			UpdatedAt:           now,
 		}
 	} else {
+		position.UnitsOwned = unitsFromPosition(*position) + unitsBought
 		position.TotalInvestedAmount += amountInRSD
 		position.UpdatedAt = now
 	}
@@ -419,7 +461,7 @@ func (s *InvestmentFundService) WithdrawFromFund(ctx context.Context, fundID uin
 	if err != nil {
 		return nil, commonErrors.InternalErr(err)
 	}
-	if position == nil || position.TotalInvestedAmount <= 0 {
+	if position == nil || unitsFromPosition(*position) <= 0 {
 		return nil, commonErrors.NotFoundErr("fund position not found")
 	}
 
@@ -428,7 +470,12 @@ func (s *InvestmentFundService) WithdrawFromFund(ctx context.Context, fundID uin
 		return nil, commonErrors.InternalErr(err)
 	}
 
-	if req.Amount > position.TotalInvestedAmount-pendingAmount {
+	nav, err := s.getFundNAV(ctx, fund.FundID, fund.AccountNumber)
+	if err != nil {
+		return nil, err
+	}
+	positionValueRSD := unitsFromPosition(*position) * nav
+	if req.Amount > positionValueRSD-pendingAmount+floatTolerance {
 		return nil, commonErrors.BadRequestErr("withdrawal amount exceeds available fund position")
 	}
 
@@ -494,7 +541,15 @@ func (s *InvestmentFundService) completeFundRedemption(
 	destinationAccount *pb.GetAccountByNumberResponse,
 	commissionExempt bool,
 ) (*dto.WithdrawFromFundResponse, error) {
-	_, err := s.bankingClient.CreatePaymentWithoutVerification(ctx, &pb.CreatePaymentRequest{
+	nav, err := s.getFundNAV(ctx, fund.FundID, fund.AccountNumber)
+	if err != nil {
+		return nil, err
+	}
+	if redemption.Amount > unitsFromPosition(*position)*nav+floatTolerance {
+		return nil, commonErrors.BadRequestErr("withdrawal amount exceeds available fund position")
+	}
+
+	_, err = s.bankingClient.CreatePaymentWithoutVerification(ctx, &pb.CreatePaymentRequest{
 		PayerAccountNumber:     fund.AccountNumber,
 		RecipientAccountNumber: redemption.AccountNumber,
 		RecipientName:          fund.Name,
@@ -508,10 +563,7 @@ func (s *InvestmentFundService) completeFundRedemption(
 	}
 
 	now := s.now()
-	position.TotalInvestedAmount -= redemption.Amount
-	if position.TotalInvestedAmount < 0 {
-		position.TotalInvestedAmount = 0
-	}
+	applyRedemptionToPosition(position, redemption.Amount, nav)
 	position.UpdatedAt = now
 	if err := s.positionRepo.Upsert(ctx, position); err != nil {
 		return nil, commonErrors.InternalErr(err)
@@ -692,7 +744,16 @@ func (s *InvestmentFundService) processPendingRedemption(ctx context.Context, re
 	if err != nil {
 		return commonErrors.InternalErr(err)
 	}
-	if position == nil || position.TotalInvestedAmount < redemption.Amount {
+	if position == nil {
+		return commonErrors.BadRequestErr("withdrawal amount exceeds available fund position")
+	}
+
+	nav, err := s.getFundNAV(ctx, redemption.FundID, fund.AccountNumber)
+	if err != nil {
+		return err
+	}
+	positionValueRSD := unitsFromPosition(*position) * nav
+	if positionValueRSD < redemption.Amount-floatTolerance {
 		return commonErrors.BadRequestErr("withdrawal amount exceeds available fund position")
 	}
 
@@ -769,17 +830,70 @@ func (s *InvestmentFundService) getFundSharesValueRSD(ctx context.Context, fundI
 	return securitiesValue, nil
 }
 
-func (s *InvestmentFundService) getFundTotalInvestedRSD(ctx context.Context, fundID uint) (float64, error) {
+func (s *InvestmentFundService) getFundTotalUnits(ctx context.Context, fundID uint) (float64, error) {
 	positions, err := s.positionRepo.FindByFund(ctx, fundID)
 	if err != nil {
 		return 0, commonErrors.InternalErr(err)
 	}
 
-	var total float64
+	var totalUnits float64
 	for _, pos := range positions {
-		total += pos.TotalInvestedAmount
+		totalUnits += unitsFromPosition(pos)
 	}
-	return total, nil
+	return totalUnits, nil
+}
+
+func (s *InvestmentFundService) getFundNAV(ctx context.Context, fundID uint, accountNumber string) (float64, error) {
+	liquidAssets, err := s.getLiquidAssets(ctx, accountNumber)
+	if err != nil {
+		return 0, commonErrors.InternalErr(err)
+	}
+	sharesValue, err := s.getFundSharesValueRSD(ctx, fundID)
+	if err != nil {
+		return 0, commonErrors.InternalErr(err)
+	}
+	totalUnits, err := s.getFundTotalUnits(ctx, fundID)
+	if err != nil {
+		return 0, err
+	}
+	return calculateFundNAV(liquidAssets+sharesValue, totalUnits), nil
+}
+
+func applyRedemptionToPosition(position *model.ClientFundPosition, amountRSD, nav float64) {
+	currentUnits := unitsFromPosition(*position)
+	if currentUnits <= 0 || nav <= 0 {
+		position.UnitsOwned = 0
+		position.TotalInvestedAmount = 0
+		return
+	}
+
+	currentValue := currentUnits * nav
+	if currentValue <= 0 {
+		position.UnitsOwned = 0
+		position.TotalInvestedAmount = 0
+		return
+	}
+
+	redeemedUnits := amountRSD / nav
+	if redeemedUnits > currentUnits {
+		redeemedUnits = currentUnits
+	}
+
+	costReductionRatio := amountRSD / currentValue
+	if costReductionRatio > 1 {
+		costReductionRatio = 1
+	}
+
+	// Always persist explicit units after first redemption, including legacy rows.
+	position.UnitsOwned = currentUnits - redeemedUnits
+	if position.UnitsOwned < floatTolerance {
+		position.UnitsOwned = 0
+	}
+
+	position.TotalInvestedAmount -= position.TotalInvestedAmount * costReductionRatio
+	if position.TotalInvestedAmount < floatTolerance {
+		position.TotalInvestedAmount = 0
+	}
 }
 
 func (s *InvestmentFundService) GetClientFundPositions(ctx context.Context, clientID uint) ([]dto.FundPositionSummaryResponse, error) {
@@ -808,15 +922,15 @@ func (s *InvestmentFundService) GetClientFundPositions(ctx context.Context, clie
 		}
 
 		fundTotalValue := sharesValue + liquidAssets
-		fundTotalInvested, err := s.getFundTotalInvestedRSD(ctx, pos.FundID)
+		fundTotalUnits, err := s.getFundTotalUnits(ctx, pos.FundID)
 		if err != nil {
 			return nil, err
 		}
 
-		if fundTotalInvested == 0 {
+		if fundTotalUnits == 0 {
 			result[i].ClientsSharePercent = 0
 		} else {
-			result[i].ClientsSharePercent = (pos.TotalInvestedAmount / fundTotalInvested) * 100
+			result[i].ClientsSharePercent = (unitsFromPosition(pos) / fundTotalUnits) * 100
 		}
 		result[i].ClientsShareValueRSD = (result[i].ClientsSharePercent * fundTotalValue) / 100
 		result[i].TotalProfit = result[i].ClientsShareValueRSD - pos.TotalInvestedAmount
