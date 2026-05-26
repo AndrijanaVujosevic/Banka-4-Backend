@@ -10,7 +10,9 @@ import (
 	"go.uber.org/fx"
 	"gorm.io/gorm"
 
+	"github.com/RAF-SI-2025/Banka-4-Backend/common/pkg/auth"
 	"github.com/RAF-SI-2025/Banka-4-Backend/common/pkg/db"
+	"github.com/RAF-SI-2025/Banka-4-Backend/common/pkg/jwt"
 	"github.com/RAF-SI-2025/Banka-4-Backend/common/pkg/logging"
 	"github.com/RAF-SI-2025/Banka-4-Backend/services/interbank-service/internal/config"
 	"github.com/RAF-SI-2025/Banka-4-Backend/services/interbank-service/internal/handler"
@@ -31,6 +33,11 @@ func main() {
 				return db.New(cfg.DB.DSN())
 			},
 
+			func(cfg *config.Configuration) auth.TokenVerifier {
+				return jwt.NewJWTVerifier(cfg.JWTSecret)
+			},
+			service.NewNoopPermissionProvider,
+
 			service.NewPeerResolver,
 
 			repository.NewGormTransactionManager,
@@ -45,6 +52,7 @@ func main() {
 			handler.NewHealthHandler,
 			handler.NewInterbankHandler,
 			handler.NewPeerOtcHandler,
+			handler.NewPeerOtcFrontendHandler,
 		),
 
 		fx.Invoke(func(cfg *config.Configuration) error {

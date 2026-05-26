@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"time"
 
@@ -22,10 +23,15 @@ import (
 type PeerOtcService struct {
 	negotiations repository.PeerNegotiationRepository
 	peers        *PeerResolver
+	client       *PeerOtcClient
 }
 
-func NewPeerOtcService(negotiations repository.PeerNegotiationRepository, peers *PeerResolver) *PeerOtcService {
-	return &PeerOtcService{negotiations: negotiations, peers: peers}
+func NewPeerOtcService(
+	negotiations repository.PeerNegotiationRepository,
+	peers *PeerResolver,
+	client *PeerOtcClient,
+) *PeerOtcService {
+	return &PeerOtcService{negotiations: negotiations, peers: peers, client: client}
 }
 
 // CreateFromPeer handles §3.2 POST /interbank/negotiations — a peer bank's
@@ -250,4 +256,238 @@ func toNegotiationDTO(n *model.PeerNegotiation, ourRouting int) *dto.OtcNegotiat
 			LastModifiedBy:  dto.ForeignBankId{RoutingNumber: n.LastModifiedByRouting, ID: n.LastModifiedByID},
 		},
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Frontend-facing operations (driven by our authenticated users via JWT).
+// ---------------------------------------------------------------------------
+
+// LocalCreateRequest is the input our users submit when initiating a
+// cross-bank negotiation against a peer seller.
+type LocalCreateRequest struct {
+	SellerID        dto.ForeignBankId
+	Ticker          string
+	Amount          int
+	PricePerStock   float64
+	PriceCurrency   string
+	Premium         float64
+	PremiumCurrency string
+	SettlementDate  string
+}
+
+// LocalCounterRequest is the input our users submit on counter-offer.
+type LocalCounterRequest struct {
+	Amount          int
+	PricePerStock   float64
+	PriceCurrency   string
+	Premium         float64
+	PremiumCurrency string
+	SettlementDate  string
+}
+
+// ListAllPeerPublicStocks aggregates §3.1 public-stock listings from every
+// peer in the registry. Peers that fail are skipped silently; partial
+// results are returned so a single unreachable peer doesn't tank the page.
+func (s *PeerOtcService) ListAllPeerPublicStocks(ctx context.Context) ([]dto.PublicStock, error) {
+	var out []dto.PublicStock
+	for _, peer := range s.peers.All() {
+		stocks, err := s.client.PublicStock(ctx, peer.RoutingNumber)
+		if err != nil {
+			// Best-effort: drop this peer from the page but keep going.
+			continue
+		}
+		out = append(out, stocks...)
+	}
+	return out, nil
+}
+
+// ListMyNegotiations returns every cross-bank negotiation in which the
+// given local user is a party (either buyer or seller).
+func (s *PeerOtcService) ListMyNegotiations(ctx context.Context, localUserID uint) ([]dto.OtcNegotiation, error) {
+	rows, err := s.negotiations.ListByParty(ctx, s.peers.OurRoutingNumber(), strconv.FormatUint(uint64(localUserID), 10))
+	if err != nil {
+		return nil, errors.InternalErr(err)
+	}
+
+	out := make([]dto.OtcNegotiation, 0, len(rows))
+	for i := range rows {
+		out = append(out, *toNegotiationDTO(&rows[i], s.peers.OurRoutingNumber()))
+	}
+	return out, nil
+}
+
+// CreateForLocalBuyer initiates a cross-bank negotiation: our user is the
+// buyer, the seller lives on the peer. We POST §3.2 to the seller's bank,
+// store a mirror row locally with IsAuthoritative=false, and return the
+// authoritative id assigned by the peer.
+func (s *PeerOtcService) CreateForLocalBuyer(ctx context.Context, localUserID uint, req LocalCreateRequest) (*dto.ForeignBankId, error) {
+	if req.SellerID.RoutingNumber == s.peers.OurRoutingNumber() {
+		return nil, errors.BadRequestErr("seller is on this bank — use the same-bank OTC API")
+	}
+
+	buyer := dto.ForeignBankId{
+		RoutingNumber: s.peers.OurRoutingNumber(),
+		ID:            strconv.FormatUint(uint64(localUserID), 10),
+	}
+
+	offer := dto.OtcOffer{
+		BuyerID:         buyer,
+		SellerID:        req.SellerID,
+		Ticker:          req.Ticker,
+		Amount:          req.Amount,
+		PricePerStock:   req.PricePerStock,
+		PriceCurrency:   req.PriceCurrency,
+		Premium:         req.Premium,
+		PremiumCurrency: req.PremiumCurrency,
+		SettlementDate:  req.SettlementDate,
+		LastModifiedBy:  buyer,
+	}
+	if err := s.validateOffer(offer); err != nil {
+		return nil, err
+	}
+
+	remoteID, err := s.client.CreateNegotiation(ctx, offer)
+	if err != nil {
+		return nil, err
+	}
+
+	remoteIDValue := remoteID.ID
+	mirror := &model.PeerNegotiation{
+		ID:                    uuid.NewString(),
+		BuyerRoutingNumber:    buyer.RoutingNumber,
+		BuyerID:               buyer.ID,
+		SellerRoutingNumber:   req.SellerID.RoutingNumber,
+		SellerID:              req.SellerID.ID,
+		Ticker:                req.Ticker,
+		Amount:                req.Amount,
+		PricePerStock:         req.PricePerStock,
+		PriceCurrency:         req.PriceCurrency,
+		Premium:               req.Premium,
+		PremiumCurrency:       req.PremiumCurrency,
+		SettlementDate:        req.SettlementDate,
+		LastModifiedByRouting: buyer.RoutingNumber,
+		LastModifiedByID:      buyer.ID,
+		Status:                model.PeerNegotiationOngoing,
+		IsAuthoritative:       false,
+		RemoteNegotiationID:   &remoteIDValue,
+	}
+	if err := s.negotiations.Create(ctx, mirror); err != nil {
+		return nil, errors.InternalErr(err)
+	}
+
+	return remoteID, nil
+}
+
+// SendCounterOfferAsLocal posts a counter-offer from our user against an
+// existing cross-bank negotiation. negotiationID is the authoritative id
+// (the seller's bank routing + their opaque id).
+func (s *PeerOtcService) SendCounterOfferAsLocal(
+	ctx context.Context,
+	localUserID uint,
+	negotiationID dto.ForeignBankId,
+	req LocalCounterRequest,
+) error {
+	mirror, err := s.findLocalMirrorByRemote(ctx, negotiationID, localUserID)
+	if err != nil {
+		return err
+	}
+
+	me := dto.ForeignBankId{
+		RoutingNumber: s.peers.OurRoutingNumber(),
+		ID:            strconv.FormatUint(uint64(localUserID), 10),
+	}
+
+	offer := dto.OtcOffer{
+		BuyerID:         dto.ForeignBankId{RoutingNumber: mirror.BuyerRoutingNumber, ID: mirror.BuyerID},
+		SellerID:        dto.ForeignBankId{RoutingNumber: mirror.SellerRoutingNumber, ID: mirror.SellerID},
+		Ticker:          mirror.Ticker,
+		Amount:          req.Amount,
+		PricePerStock:   req.PricePerStock,
+		PriceCurrency:   req.PriceCurrency,
+		Premium:         req.Premium,
+		PremiumCurrency: req.PremiumCurrency,
+		SettlementDate:  req.SettlementDate,
+		LastModifiedBy:  me,
+	}
+	if err := s.validateOffer(offer); err != nil {
+		return err
+	}
+
+	if err := s.client.UpdateCounter(ctx, negotiationID, offer); err != nil {
+		return err
+	}
+
+	// Mirror the update locally so reads of "my negotiations" stay fresh.
+	mirror.Amount = req.Amount
+	mirror.PricePerStock = req.PricePerStock
+	mirror.PriceCurrency = req.PriceCurrency
+	mirror.Premium = req.Premium
+	mirror.PremiumCurrency = req.PremiumCurrency
+	mirror.SettlementDate = req.SettlementDate
+	mirror.LastModifiedByRouting = me.RoutingNumber
+	mirror.LastModifiedByID = me.ID
+	if err := s.negotiations.Update(ctx, mirror); err != nil {
+		return errors.InternalErr(err)
+	}
+
+	return nil
+}
+
+// WithdrawAsLocal closes a cross-bank negotiation from our side and
+// notifies the peer.
+func (s *PeerOtcService) WithdrawAsLocal(
+	ctx context.Context,
+	localUserID uint,
+	negotiationID dto.ForeignBankId,
+) error {
+	mirror, err := s.findLocalMirrorByRemote(ctx, negotiationID, localUserID)
+	if err != nil {
+		return err
+	}
+
+	if err := s.client.Close(ctx, negotiationID); err != nil {
+		return err
+	}
+
+	if mirror.Status != model.PeerNegotiationOngoing {
+		return nil
+	}
+	mirror.Status = model.PeerNegotiationCancelled
+	if err := s.negotiations.Update(ctx, mirror); err != nil {
+		return errors.InternalErr(err)
+	}
+
+	return nil
+}
+
+// findLocalMirrorByRemote loads our mirror row for an authoritative
+// negotiation id and verifies that the calling user is a party to it.
+func (s *PeerOtcService) findLocalMirrorByRemote(
+	ctx context.Context,
+	negotiationID dto.ForeignBankId,
+	localUserID uint,
+) (*model.PeerNegotiation, error) {
+	userIDStr := strconv.FormatUint(uint64(localUserID), 10)
+	ourRouting := s.peers.OurRoutingNumber()
+
+	rows, err := s.negotiations.ListByParty(ctx, ourRouting, userIDStr)
+	if err != nil {
+		return nil, errors.InternalErr(err)
+	}
+
+	for i := range rows {
+		row := &rows[i]
+		if row.IsAuthoritative {
+			continue
+		}
+		if row.RemoteNegotiationID == nil || *row.RemoteNegotiationID != negotiationID.ID {
+			continue
+		}
+		if row.SellerRoutingNumber != negotiationID.RoutingNumber {
+			continue
+		}
+		return row, nil
+	}
+
+	return nil, errors.NotFoundErr("negotiation not found for caller")
 }

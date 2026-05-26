@@ -13,6 +13,7 @@ import (
 	ginSwagger "github.com/swaggo/gin-swagger"
 	"go.uber.org/fx"
 
+	"github.com/RAF-SI-2025/Banka-4-Backend/common/pkg/auth"
 	"github.com/RAF-SI-2025/Banka-4-Backend/common/pkg/errors"
 	"github.com/RAF-SI-2025/Banka-4-Backend/common/pkg/logging"
 	_ "github.com/RAF-SI-2025/Banka-4-Backend/services/interbank-service/docs"
@@ -28,11 +29,14 @@ func NewServer(
 	healthHandler *handler.HealthHandler,
 	interbankHandler *handler.InterbankHandler,
 	peerOtcHandler *handler.PeerOtcHandler,
+	peerOtcFrontendHandler *handler.PeerOtcFrontendHandler,
 	peers *service.PeerResolver,
+	verifier auth.TokenVerifier,
+	permissions auth.PermissionProvider,
 ) {
 	r := gin.New()
 	initRouter(r, cfg)
-	setupRoutes(r, healthHandler, interbankHandler, peerOtcHandler, peers)
+	setupRoutes(r, healthHandler, interbankHandler, peerOtcHandler, peerOtcFrontendHandler, peers, verifier, permissions)
 
 	srv := &http.Server{Addr: ":" + cfg.Port, Handler: r}
 	registerLifecycle(lc, srv)
@@ -58,13 +62,33 @@ func setupRoutes(
 	healthHandler *handler.HealthHandler,
 	interbankHandler *handler.InterbankHandler,
 	peerOtcHandler *handler.PeerOtcHandler,
+	peerOtcFrontendHandler *handler.PeerOtcFrontendHandler,
 	peers *service.PeerResolver,
+	verifier auth.TokenVerifier,
+	permissions auth.PermissionProvider,
 ) {
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	api := r.Group("/api")
 	{
 		api.GET("/health", healthHandler.Health)
+
+		// /api/peer-otc/* — user-facing cross-bank OTC routes. JWT-authenticated,
+		// authorised clients only.
+		peerOtc := api.Group("/peer-otc")
+		peerOtc.Use(auth.Middleware(verifier, permissions))
+		peerOtc.Use(auth.RequireIdentityType(auth.IdentityClient))
+		{
+			peerOtc.GET("/public-stocks", peerOtcFrontendHandler.ListPublicStocks)
+
+			peerOtcNegotiations := peerOtc.Group("/negotiations")
+			{
+				peerOtcNegotiations.GET("", peerOtcFrontendHandler.ListMyNegotiations)
+				peerOtcNegotiations.POST("", peerOtcFrontendHandler.CreateNegotiation)
+				peerOtcNegotiations.PUT("/:rn/:id/counter", peerOtcFrontendHandler.SendCounterOffer)
+				peerOtcNegotiations.DELETE("/:rn/:id", peerOtcFrontendHandler.Withdraw)
+			}
+		}
 	}
 
 	// The /interbank endpoint is mounted at the root, not under /api, so its

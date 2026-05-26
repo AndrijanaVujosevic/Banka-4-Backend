@@ -125,6 +125,7 @@ func (c *PeerOtcClient) do(ctx context.Context, peerRouting int, method, path st
 		if err != nil {
 			return errors.InternalErr(err)
 		}
+
 		bodyReader = bytes.NewReader(raw)
 	}
 
@@ -136,6 +137,7 @@ func (c *PeerOtcClient) do(ctx context.Context, peerRouting int, method, path st
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
+
 	req.Header.Set("X-Api-Key", peer.OurAPIKey)
 
 	resp, err := c.httpClient.Do(req)
@@ -146,6 +148,7 @@ func (c *PeerOtcClient) do(ctx context.Context, peerRouting int, method, path st
 			err,
 		)
 	}
+
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {

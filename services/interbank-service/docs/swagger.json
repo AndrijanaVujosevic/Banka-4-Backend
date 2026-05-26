@@ -7,6 +7,259 @@
         "version": "1.0"
     },
     "paths": {
+        "/api/peer-otc/negotiations": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns every cross-bank negotiation in which the\nauthenticated user is a party.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "peer-otc"
+                ],
+                "summary": "List my cross-bank OTC negotiations",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/dto.OtcNegotiation"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/errors.AppError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "The authenticated user becomes the buyer. The request is\nforwarded to the seller's bank via §3.2; on success the\nauthoritative id assigned by the peer is returned.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "peer-otc"
+                ],
+                "summary": "Initiate a cross-bank OTC negotiation",
+                "parameters": [
+                    {
+                        "description": "Offer terms",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.CreatePeerNegotiationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/dto.ForeignBankId"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.AppError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/errors.AppError"
+                        }
+                    },
+                    "502": {
+                        "description": "Peer unreachable or returned non-2xx",
+                        "schema": {
+                            "$ref": "#/definitions/errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/peer-otc/negotiations/{rn}/{id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Closes the negotiation locally and notifies the peer via §3.5.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "peer-otc"
+                ],
+                "summary": "Withdraw from a cross-bank negotiation",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Authoritative bank routing number",
+                        "name": "rn",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Negotiation id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/errors.AppError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/errors.AppError"
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "$ref": "#/definitions/errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/peer-otc/negotiations/{rn}/{id}/counter": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Forwards a counter-offer to the authoritative bank via §3.3.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "peer-otc"
+                ],
+                "summary": "Post a counter-offer on a cross-bank negotiation",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Authoritative bank routing number",
+                        "name": "rn",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Negotiation id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Counter terms",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.CounterPeerNegotiationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/errors.AppError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/errors.AppError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/errors.AppError"
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "$ref": "#/definitions/errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/peer-otc/public-stocks": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Aggregates §3.1 /public-stock results from every peer in\nthe registry. Peers that fail are silently skipped.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "peer-otc"
+                ],
+                "summary": "Browse public OTC stocks across all peer banks",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/dto.PublicStock"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
         "/interbank": {
             "post": {
                 "description": "Single ingress endpoint for the bank-to-bank protocol (§2.11).\nAccepts NEW_TX, COMMIT_TX and ROLLBACK_TX messages. The\nX-Api-Key header authenticates the sending bank.",
@@ -589,6 +842,42 @@
                 }
             }
         },
+        "dto.PublicStock": {
+            "type": "object",
+            "properties": {
+                "sellers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/dto.PublicStockSeller"
+                    }
+                },
+                "stock": {
+                    "$ref": "#/definitions/dto.StockDescription"
+                }
+            }
+        },
+        "dto.PublicStockSeller": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "integer"
+                },
+                "seller": {
+                    "$ref": "#/definitions/dto.ForeignBankId"
+                }
+            }
+        },
+        "dto.StockDescription": {
+            "type": "object",
+            "required": [
+                "ticker"
+            ],
+            "properties": {
+                "ticker": {
+                    "type": "string"
+                }
+            }
+        },
         "dto.TransactionVote": {
             "type": "object",
             "properties": {
@@ -664,6 +953,83 @@
                 },
                 "timestamp": {
                     "type": "string"
+                }
+            }
+        },
+        "handler.CounterPeerNegotiationRequest": {
+            "type": "object",
+            "required": [
+                "amount",
+                "premium",
+                "premiumCurrency",
+                "priceCurrency",
+                "pricePerStock",
+                "settlementDate"
+            ],
+            "properties": {
+                "amount": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "premium": {
+                    "type": "number"
+                },
+                "premiumCurrency": {
+                    "type": "string",
+                    "maxLength": 8
+                },
+                "priceCurrency": {
+                    "type": "string",
+                    "maxLength": 8
+                },
+                "pricePerStock": {
+                    "type": "number"
+                },
+                "settlementDate": {
+                    "type": "string"
+                }
+            }
+        },
+        "handler.CreatePeerNegotiationRequest": {
+            "type": "object",
+            "required": [
+                "amount",
+                "premium",
+                "premiumCurrency",
+                "priceCurrency",
+                "pricePerStock",
+                "sellerId",
+                "settlementDate",
+                "ticker"
+            ],
+            "properties": {
+                "amount": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "premium": {
+                    "type": "number"
+                },
+                "premiumCurrency": {
+                    "type": "string",
+                    "maxLength": 8
+                },
+                "priceCurrency": {
+                    "type": "string",
+                    "maxLength": 8
+                },
+                "pricePerStock": {
+                    "type": "number"
+                },
+                "sellerId": {
+                    "$ref": "#/definitions/dto.ForeignBankId"
+                },
+                "settlementDate": {
+                    "type": "string"
+                },
+                "ticker": {
+                    "type": "string",
+                    "maxLength": 16
                 }
             }
         }
