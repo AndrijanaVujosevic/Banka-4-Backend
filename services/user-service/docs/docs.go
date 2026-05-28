@@ -280,7 +280,7 @@ const docTemplate = `{
                     {
                         "type": "integer",
                         "description": "Filter by performer employee ID",
-                        "name": "performed_by_id",
+                        "name": "performed_by_employee_id",
                         "in": "query"
                     },
                     {
@@ -1302,7 +1302,7 @@ const docTemplate = `{
                 "id": {
                     "type": "integer"
                 },
-                "performed_by_id": {
+                "performed_by_employee_id": {
                     "type": "integer"
                 }
             }

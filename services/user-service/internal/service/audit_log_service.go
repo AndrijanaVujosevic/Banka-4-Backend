@@ -20,7 +20,7 @@ func (s *AuditLogService) GetAll(ctx context.Context, query *dto.ListAuditLogsQu
 	entries, total, err := s.svc.GetAll(
 		ctx,
 		query.ActionType,
-		query.PerformedByID,
+		query.PerformedByEmployeeID,
 		query.DateFrom,
 		query.DateTo,
 		query.Page,

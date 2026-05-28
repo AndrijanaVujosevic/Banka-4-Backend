@@ -12,9 +12,9 @@ const (
 )
 
 type AuditLog struct {
-	ID            uint      `gorm:"primaryKey;autoIncrement"`
-	ActionType    string    `gorm:"not null;size:50;index"`
-	PerformedByID uint      `gorm:"not null;index"`
-	Details       string    `gorm:"type:text"`
-	CreatedAt     time.Time `gorm:"index"`
+	ID                    uint      `gorm:"primaryKey;autoIncrement"`
+	ActionType            string    `gorm:"not null;size:50;index"`
+	PerformedByEmployeeID uint      `gorm:"not null;index"`
+	Details               string    `gorm:"type:text"`
+	CreatedAt             time.Time `gorm:"index"`
 }

@@ -24,7 +24,7 @@ func NewAuditLogHandler(service *service.AuditLogService) *AuditLogHandler {
 // @Tags audit-log
 // @Produce json
 // @Param action_type query string false "Filter by action type"
-// @Param performed_by_id query int false "Filter by performer employee ID"
+// @Param performed_by_employee_id query int false "Filter by performer employee ID"
 // @Param date_from query string false "Filter entries from this date (YYYY-MM-DD)"
 // @Param date_to query string false "Filter entries up to this date (YYYY-MM-DD)"
 // @Param page query int false "Page number" minimum(1)

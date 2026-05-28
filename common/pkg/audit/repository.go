@@ -9,7 +9,7 @@ import (
 
 type Repository interface {
 	Save(ctx context.Context, entry *AuditLog) error
-	GetAll(ctx context.Context, actionType string, performedByID *uint, dateFrom, dateTo *time.Time, page, pageSize int) ([]AuditLog, int64, error)
+	GetAll(ctx context.Context, actionType string, performedByEmployeeID *uint, dateFrom, dateTo *time.Time, page, pageSize int) ([]AuditLog, int64, error)
 }
 
 type repository struct {
@@ -24,7 +24,7 @@ func (r *repository) Save(ctx context.Context, entry *AuditLog) error {
 	return r.db.WithContext(ctx).Create(entry).Error
 }
 
-func (r *repository) GetAll(ctx context.Context, actionType string, performedByID *uint, dateFrom, dateTo *time.Time, page, pageSize int) ([]AuditLog, int64, error) {
+func (r *repository) GetAll(ctx context.Context, actionType string, performedByEmployeeID *uint, dateFrom, dateTo *time.Time, page, pageSize int) ([]AuditLog, int64, error) {
 	var entries []AuditLog
 	var total int64
 
@@ -33,8 +33,8 @@ func (r *repository) GetAll(ctx context.Context, actionType string, performedByI
 	if actionType != "" {
 		query = query.Where("action_type = ?", actionType)
 	}
-	if performedByID != nil {
-		query = query.Where("performed_by_id = ?", *performedByID)
+	if performedByEmployeeID != nil {
+		query = query.Where("performed_by_employee_id = ?", *performedByEmployeeID)
 	}
 	if dateFrom != nil {
 		query = query.Where("created_at >= ?", *dateFrom)
