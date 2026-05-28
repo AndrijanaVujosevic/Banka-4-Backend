@@ -86,8 +86,12 @@ func TestMain(m *testing.M) {
 		&model.ClientFundPosition{},
 		&model.ClientFundInvestment{},
 		&model.ClientFundRedemption{},
+		&model.Watchlist{},
+		&model.WatchlistItem{},
 		&model.FundPerformance{},
 		&audit.AuditLog{},
+		&model.Watchlist{},
+		&model.WatchlistItem{},
 	); err != nil {
 		log.Fatalf("auto migrate test schema: %v", err)
 	}
@@ -372,12 +376,13 @@ func setupTestRouterWithPermissions(t *testing.T, db *gorm.DB, perms []permissio
 	taxHandler := handler.NewTaxHandler(taxSvc, userClient)
 	otcHandler := handler.NewOTCHandler(otcSvc)
 	otcOfferHandler := handler.NewOtcOfferHandler(otcOfferSvc)
+	watchlistHandler := handler.NewWatchlistHandler(service.NewWatchlistService(repository.NewWatchlistRepository(db), listingRepo))
 
 	verifier := auth.TokenVerifier(commonjwt.NewJWTVerifier(cfg.JWTSecret))
 
 	r := gin.New()
 	server.InitRouter(r, cfg)
-	server.SetupRoutes(r, healthHandler, taxHandler, exchangeHandler, orderHandler, portfolioHandler, listingHandler, otcHandler, otcOfferHandler, fundHandler, verifier, permProvider, userClient)
+	server.SetupRoutes(r, healthHandler, taxHandler, exchangeHandler, orderHandler, portfolioHandler, listingHandler, otcHandler, otcOfferHandler, fundHandler, watchlistHandler, verifier, permProvider, userClient)
 
 	return r, userClient
 }
