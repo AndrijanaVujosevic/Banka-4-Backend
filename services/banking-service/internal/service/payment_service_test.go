@@ -234,6 +234,8 @@ func newTestPaymentService(
 		mobileSecretClient:   &fakeMobileSecretClient{},
 		txManager:            &fakeBankingTxManager{},
 		transactionProcessor: &fakeVerifyTransactionProcessor{},
+		userClient:           &fakeUserClient{},
+		mailer:               &fakeAccountServiceMailer{},
 		now:                  time.Now,
 	}
 }
